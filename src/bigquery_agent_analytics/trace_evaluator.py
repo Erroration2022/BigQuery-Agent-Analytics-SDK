@@ -218,16 +218,22 @@ class SessionTrace:
       if event.event_type == "AGENT_COMPLETED":
         content = event.content
         if isinstance(content, dict):
-          return content.get("response") or content.get("text_summary")
-        return str(content) if content else None
+          result = content.get("response") or content.get("text_summary")
+          if result:
+            return result
+        elif content:
+          return str(content)
 
     # Fallback to last LLM response
     for event in reversed(self.events):
       if event.event_type == "LLM_RESPONSE":
         content = event.content
         if isinstance(content, dict):
-          return content.get("response")
-        return str(content) if content else None
+          result = content.get("response")
+          if result:
+            return result
+        elif content:
+          return str(content)
 
     return None
 

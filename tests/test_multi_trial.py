@@ -44,13 +44,22 @@ class TestComputePassAtK:
     assert compute_pass_at_k(5, 0) == 0.0
 
   def test_some_pass(self):
-    # P(>=1 pass in 3 trials) with 2 of 3 passing
-    result = compute_pass_at_k(3, 2)
-    assert 0.0 < result <= 1.0
+    # pass@1 with 2 of 3 passing: 1 - C(1,1)/C(3,1) = 2/3
+    result = compute_pass_at_k(3, 2, k=1)
+    assert abs(result - 2 / 3) < 1e-9
 
   def test_one_of_many(self):
-    result = compute_pass_at_k(10, 1)
-    assert 0.0 < result <= 1.0
+    # pass@1 with 1 of 10 passing: 1 - C(9,1)/C(10,1) = 0.1
+    result = compute_pass_at_k(10, 1, k=1)
+    assert abs(result - 0.1) < 1e-9
+
+  def test_pass_at_k_equals_num_trials(self):
+    # pass@n with any passes is always 1.0
+    assert compute_pass_at_k(10, 1, k=10) == 1.0
+    assert compute_pass_at_k(10, 8, k=10) == 1.0
+
+  def test_zero_k(self):
+    assert compute_pass_at_k(5, 3, k=0) == 0.0
 
   def test_zero_trials(self):
     assert compute_pass_at_k(0, 0) == 0.0

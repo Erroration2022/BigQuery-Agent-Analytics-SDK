@@ -192,6 +192,33 @@ class TestSessionTrace:
 
     assert response == "LLM says hello."
 
+  def test_extract_final_response_empty_agent_completed_falls_back(self):
+    """Empty AGENT_COMPLETED should fall back to LLM_RESPONSE."""
+    events = [
+        TraceEvent(
+            event_type="LLM_RESPONSE",
+            agent="agent",
+            timestamp=datetime.now(timezone.utc),
+            content={"response": "Actual answer."},
+            attributes={},
+        ),
+        TraceEvent(
+            event_type="AGENT_COMPLETED",
+            agent="agent",
+            timestamp=datetime.now(timezone.utc),
+            content={"response": "", "text_summary": ""},
+            attributes={},
+        ),
+    ]
+
+    trace = SessionTrace(
+        session_id="sess-1",
+        user_id="user-1",
+        events=events,
+    )
+
+    assert trace.extract_final_response() == "Actual answer."
+
 
 class TestTrajectoryMetrics:
   """Tests for TrajectoryMetrics class."""

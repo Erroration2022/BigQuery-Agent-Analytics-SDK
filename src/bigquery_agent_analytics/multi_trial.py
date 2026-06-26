@@ -115,30 +115,33 @@ class MultiTrialReport(BaseModel):
 def compute_pass_at_k(
     num_trials: int,
     num_passed: int,
+    k: int = 1,
 ) -> float:
   """Computes pass@k: P(>=1 pass in k trials).
 
   Uses the formula: 1 - C(n-c, k) / C(n, k)
-  where n = num_trials, c = num_passed, k = num_trials.
+  where n = num_trials, c = num_passed.
 
   Args:
-      num_trials: Total number of trials (k).
+      num_trials: Total number of trials (n).
       num_passed: Number of trials that passed (c).
+      k: Number of independent trials to sample (defaults to 1).
 
   Returns:
       Probability that at least one trial passes.
   """
-  if num_trials <= 0:
+  if num_trials <= 0 or k <= 0:
     return 0.0
   if num_passed <= 0:
     return 0.0
   if num_passed >= num_trials:
     return 1.0
 
+  k = min(k, num_trials)
+
   # 1 - C(n-c, k) / C(n, k)
   n = num_trials
   c = num_passed
-  k = num_trials
 
   # C(n-c, k) / C(n, k) -- if n-c < k then C(n-c,k)=0 => pass@k=1
   if n - c < k:
@@ -201,6 +204,7 @@ class TrialRunner:
       evaluator: BigQueryTraceEvaluator,
       num_trials: int = 5,
       concurrency: int = 3,
+      pass_at_k: int = 1,
   ) -> None:
     """Initializes the TrialRunner.
 
@@ -208,10 +212,12 @@ class TrialRunner:
         evaluator: The trace evaluator to wrap.
         num_trials: Number of trials to run per task.
         concurrency: Maximum concurrent evaluations.
+        pass_at_k: k for the pass@k metric (defaults to 1).
     """
     self.evaluator = evaluator
     self.num_trials = num_trials
     self.concurrency = concurrency
+    self.pass_at_k = pass_at_k
 
   async def run_trials(
       self,
@@ -329,7 +335,11 @@ class TrialRunner:
         session_id=session_id,
         num_trials=num_trials,
         trial_results=trial_results,
-        pass_at_k=compute_pass_at_k(num_trials, num_passed),
+        pass_at_k=compute_pass_at_k(
+            num_trials,
+            num_passed,
+            k=self.pass_at_k,
+        ),
         pass_pow_k=compute_pass_pow_k(num_trials, num_passed),
         per_trial_pass_rate=num_passed / num_trials,
         mean_scores=mean_scores,
