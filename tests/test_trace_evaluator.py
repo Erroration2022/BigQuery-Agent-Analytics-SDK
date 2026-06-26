@@ -465,6 +465,44 @@ class TestBigQueryTraceEvaluator:
     assert "response_match" in result.scores
     assert result.scores["response_match"] == 1.0
 
+  @pytest.mark.asyncio
+  async def test_evaluate_session_missing_response_fails(
+      self, evaluator, mock_client
+  ):
+    """Golden response expected but no captured response should fail."""
+    mock_results = [
+        {
+            "event_type": "TOOL_STARTING",
+            "agent": "agent",
+            "timestamp": datetime.now(timezone.utc),
+            "content": '{"tool": "search", "args": {"q": "weather"}}',
+            "attributes": "{}",
+            "span_id": "span-1",
+            "status": "OK",
+        },
+        {
+            "event_type": "TOOL_COMPLETED",
+            "agent": "agent",
+            "timestamp": datetime.now(timezone.utc),
+            "content": '{"tool": "search", "result": "sunny"}',
+            "attributes": "{}",
+            "span_id": "span-1",
+            "status": "OK",
+        },
+    ]
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = mock_results
+    mock_client.query.return_value = mock_query_job
+
+    result = await evaluator.evaluate_session(
+        session_id="sess-123",
+        golden_response="The weather is sunny.",
+    )
+
+    assert result.eval_status == EvalStatus.FAILED
+    assert result.scores["response_match"] == 0.0
+
   def test_compute_response_match_exact(self, evaluator):
     """Test exact response matching."""
     score = evaluator._compute_response_match(

@@ -422,6 +422,84 @@ class TestAIGenerateJudge:
     assert report.session_scores[0].passed is True
     assert report.session_scores[1].passed is False
 
+  def test_ai_generate_judge_null_score_fails(self):
+    """Sessions with no judge score must not be marked as passed."""
+    mock_bq = _mock_bq_client()
+    mock_rows = [
+        _make_mock_row({
+            "session_id": "s1",
+            "trace_text": "USER: hi",
+            "final_response": "hello",
+            "score": None,
+            "justification": "",
+        }),
+    ]
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_rows
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+    )
+
+    from bigquery_agent_analytics.evaluators import LLMAsJudge
+
+    evaluator = LLMAsJudge.correctness(threshold=0.5)
+    criterion = evaluator._criteria[0]
+
+    report = client._ai_generate_judge(
+        evaluator,
+        criterion,
+        "agent_events_v2",
+        "TRUE",
+        [],
+    )
+
+    assert report.total_sessions == 1
+    assert report.session_scores[0].scores == {}
+    assert report.session_scores[0].passed is False
+
+  def test_bqml_judge_unparseable_response_fails(self):
+    """BQML judge sessions with no parsed score must not pass."""
+    mock_bq = _mock_bq_client()
+    mock_rows = [
+        _make_mock_row({
+            "session_id": "s1",
+            "evaluation": "not valid json",
+        }),
+    ]
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_rows
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+    )
+
+    from bigquery_agent_analytics.evaluators import LLMAsJudge
+
+    evaluator = LLMAsJudge.correctness(threshold=0.5)
+    criterion = evaluator._criteria[0]
+
+    report = client._bqml_judge(
+        evaluator,
+        criterion,
+        "agent_events_v2",
+        "TRUE",
+        [],
+        "proj.ds.model",
+    )
+
+    assert report.total_sessions == 1
+    assert report.session_scores[0].scores == {}
+    assert report.session_scores[0].passed is False
+
   def test_fallback_chain_tries_ai_generate_first(self):
     """Verify _evaluate_llm_judge tries AI.GENERATE first."""
     mock_bq = _mock_bq_client()

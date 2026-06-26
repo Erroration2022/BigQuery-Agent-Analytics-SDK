@@ -584,7 +584,9 @@ class Client:
             min(1.0, float(raw_score) / 10.0),
         )
 
-      passed = all(s >= criterion.threshold for s in scores.values())
+      passed = bool(scores) and all(
+          s >= criterion.threshold for s in scores.values()
+      )
       session_scores.append(
           SessionScore(
               session_id=sid,
@@ -648,7 +650,9 @@ class Client:
           if isinstance(v, (int, float)):
             scores[k] = float(v) / 10.0
 
-      passed = all(s >= criterion.threshold for s in scores.values())
+      passed = bool(scores) and all(
+          s >= criterion.threshold for s in scores.values()
+      )
       session_scores.append(
           SessionScore(
               session_id=sid,

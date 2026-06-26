@@ -612,10 +612,13 @@ Required JSON format:
         )
 
     # Response matching (simple text comparison)
-    if golden_response is not None and trace.final_response is not None:
-      scores["response_match"] = self._compute_response_match(
-          trace.final_response, golden_response
-      )
+    if golden_response is not None:
+      if trace.final_response is not None:
+        scores["response_match"] = self._compute_response_match(
+            trace.final_response, golden_response
+        )
+      else:
+        scores["response_match"] = 0.0
 
     # LLM-as-judge evaluation
     llm_feedback = None
