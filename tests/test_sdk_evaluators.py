@@ -307,6 +307,14 @@ class TestAIGenerateJudgeBatchQuery:
   def test_does_not_contain_ml_generate_text(self):
     assert "ML.GENERATE_TEXT" not in AI_GENERATE_JUDGE_BATCH_QUERY
 
+  def test_prefers_agent_completed_for_final_response(self):
+    """Batch judge SQL must mirror Trace.final_response extraction."""
+    assert "event_type = 'AGENT_COMPLETED'" in AI_GENERATE_JUDGE_BATCH_QUERY
+    assert "event_type = 'LLM_RESPONSE'" in AI_GENERATE_JUDGE_BATCH_QUERY
+    assert "text_summary" in AI_GENERATE_JUDGE_BATCH_QUERY
+    # Legacy path should use the same extraction logic.
+    assert "event_type = 'AGENT_COMPLETED'" in LLM_JUDGE_BATCH_QUERY
+
   def test_legacy_template_uses_ml_generate_text(self):
     assert "ML.GENERATE_TEXT" in LLM_JUDGE_BATCH_QUERY
     assert "ml_generate_text_result" in LLM_JUDGE_BATCH_QUERY

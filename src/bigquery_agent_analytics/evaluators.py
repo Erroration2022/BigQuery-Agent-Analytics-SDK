@@ -639,6 +639,34 @@ class LLMAsJudge:
 # SQL Templates for BigQuery-native evaluation                         #
 # ------------------------------------------------------------------ #
 
+# Mirrors Trace.final_response: prefer AGENT_COMPLETED, then LLM_RESPONSE.
+_JUDGE_FINAL_RESPONSE_SQL = """\
+    COALESCE(
+      ARRAY_AGG(
+        IF(
+          event_type = 'AGENT_COMPLETED',
+          COALESCE(
+            JSON_EXTRACT_SCALAR(content, '$.response'),
+            JSON_EXTRACT_SCALAR(content, '$.text_summary')
+          ),
+          NULL
+        )
+        IGNORE NULLS
+        ORDER BY timestamp DESC
+        LIMIT 1
+      )[SAFE_OFFSET(0)],
+      ARRAY_AGG(
+        IF(
+          event_type = 'LLM_RESPONSE',
+          JSON_EXTRACT_SCALAR(content, '$.response'),
+          NULL
+        )
+        IGNORE NULLS
+        ORDER BY timestamp DESC
+        LIMIT 1
+      )[SAFE_OFFSET(0)]
+    ) AS final_response"""
+
 SESSION_SUMMARY_QUERY = """\
 SELECT
   session_id,
@@ -699,7 +727,8 @@ GROUP BY session_id
 LIMIT @trace_limit
 """
 
-AI_GENERATE_JUDGE_BATCH_QUERY = """\
+AI_GENERATE_JUDGE_BATCH_QUERY = (
+    """\
 WITH session_traces AS (
   SELECT
     session_id,
@@ -712,12 +741,9 @@ WITH session_traces AS (
       ),
       '\\n' ORDER BY timestamp
     ) AS trace_text,
-    ARRAY_AGG(
-      JSON_EXTRACT_SCALAR(content, '$.response')
-      IGNORE NULLS
-      ORDER BY timestamp DESC
-      LIMIT 1
-    )[SAFE_OFFSET(0)] AS final_response
+"""
+    + _JUDGE_FINAL_RESPONSE_SQL
+    + """
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
@@ -740,10 +766,12 @@ AI.GENERATE(
   output_schema => 'score INT64, justification STRING'
 ) AS result
 """
+)
 
 # Legacy template kept for backward compatibility with pre-created
 # BQ ML models.
-_LEGACY_LLM_JUDGE_BATCH_QUERY = """\
+_LEGACY_LLM_JUDGE_BATCH_QUERY = (
+    """\
 WITH session_traces AS (
   SELECT
     session_id,
@@ -756,12 +784,9 @@ WITH session_traces AS (
       ),
       '\\n' ORDER BY timestamp
     ) AS trace_text,
-    ARRAY_AGG(
-      JSON_EXTRACT_SCALAR(content, '$.response')
-      IGNORE NULLS
-      ORDER BY timestamp DESC
-      LIMIT 1
-    )[SAFE_OFFSET(0)] AS final_response
+"""
+    + _JUDGE_FINAL_RESPONSE_SQL
+    + """
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
@@ -783,6 +808,7 @@ SELECT
   ).ml_generate_text_result AS evaluation
 FROM session_traces
 """
+)
 
 # Keep backward-compatible alias.
 LLM_JUDGE_BATCH_QUERY = _LEGACY_LLM_JUDGE_BATCH_QUERY
