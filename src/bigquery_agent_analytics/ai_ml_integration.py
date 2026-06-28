@@ -70,7 +70,14 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 from pydantic import Field
 
+from .categorical_evaluator import _escape_sql_string_literal
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
+
+_EMBED_CONTENT_EXPR = """COALESCE(
+      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),
+      JSON_EXTRACT_SCALAR(e.content, '$.response')
+    )"""
 
 
 class AnomalyType(Enum):
@@ -269,7 +276,9 @@ class BigQueryAIClient:
     cid = connection_id or self.connection_id
     connection_clause = ""
     if cid:
-      connection_clause = f"\n    connection_id => '{cid}',"
+      connection_clause = (
+          f"\n    connection_id => '{_escape_sql_string_literal(cid)}',"
+      )
     query = self._AI_GENERATE_QUERY.format(
         endpoint=ep,
         temperature=temperature,
@@ -446,21 +455,18 @@ class EmbeddingSearchClient:
     e.session_id,
     e.invocation_id,
     e.event_type,
-    JSON_EXTRACT_SCALAR(e.content, '$.text_summary') as content,
+    {embed_content_expr} as content,
     e.timestamp,
     e.user_id,
     AI.EMBED(
-      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),
+      {embed_content_expr},
       endpoint => '{endpoint}'
     ).result as embedding
   FROM `{project}.{dataset}.{source_table}` e
   WHERE e.event_type IN (
     'USER_MESSAGE_RECEIVED', 'LLM_RESPONSE', 'AGENT_COMPLETED'
   )
-    AND COALESCE(
-      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),
-      JSON_EXTRACT_SCALAR(e.content, '$.response')
-    ) IS NOT NULL
+    AND {embed_content_expr} IS NOT NULL
     AND e.timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
   """
 
@@ -471,21 +477,18 @@ class EmbeddingSearchClient:
     e.session_id,
     e.invocation_id,
     e.event_type,
-    JSON_EXTRACT_SCALAR(e.content, '$.text_summary') as content,
+    {embed_content_expr} as content,
     e.timestamp,
     e.user_id,
     ML.GENERATE_EMBEDDING(
       MODEL `{model}`,
-      STRUCT(JSON_EXTRACT_SCALAR(e.content, '$.text_summary') AS content)
+      STRUCT({embed_content_expr} AS content)
     ).ml_generate_embedding_result as embedding
   FROM `{project}.{dataset}.{source_table}` e
   WHERE e.event_type IN (
     'USER_MESSAGE_RECEIVED', 'LLM_RESPONSE', 'AGENT_COMPLETED'
   )
-    AND COALESCE(
-      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),
-      JSON_EXTRACT_SCALAR(e.content, '$.response')
-    ) IS NOT NULL
+    AND {embed_content_expr} IS NOT NULL
     AND e.timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
   """
 
@@ -623,6 +626,7 @@ class EmbeddingSearchClient:
           table=self.embeddings_table,
           source_table=self.source_table,
           model=self.embedding_model,
+          embed_content_expr=_EMBED_CONTENT_EXPR,
       )
     else:
       query = self._AI_EMBED_INDEX_QUERY.format(
@@ -631,6 +635,7 @@ class EmbeddingSearchClient:
           table=self.embeddings_table,
           source_table=self.source_table,
           endpoint=self.embedding_endpoint,
+          embed_content_expr=_EMBED_CONTENT_EXPR,
       )
 
     job_config = bigquery.QueryJobConfig(
@@ -1386,7 +1391,10 @@ class BatchEvaluator:
     """
     connection_clause = ""
     if self.connection_id:
-      connection_clause = f"\n    connection_id => '{self.connection_id}',"
+      connection_clause = (
+          f"\n    connection_id => "
+          f"'{_escape_sql_string_literal(self.connection_id)}',"
+      )
     query = self._BATCH_EVALUATION_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
