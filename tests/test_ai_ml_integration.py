@@ -200,6 +200,24 @@ class TestBigQueryAIClient:
     assert result == ""
 
   @pytest.mark.asyncio
+  async def test_generate_text_escapes_connection_id(self, mock_client):
+    """connection_id with quotes must be escaped in AI.GENERATE SQL."""
+    client = BigQueryAIClient(
+        project_id="p",
+        dataset_id="d",
+        client=mock_client,
+        connection_id="us.my'conn",
+    )
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = [{"result": "ok"}]
+    mock_client.query.return_value = mock_query_job
+
+    await client.generate_text("Test prompt")
+
+    query_str = mock_client.query.call_args[0][0]
+    assert "connection_id => 'us.my''conn'" in query_str
+
+  @pytest.mark.asyncio
   async def test_generate_embeddings(self, ai_client, mock_client):
     """Test embedding generation."""
     mock_results = [
@@ -328,6 +346,25 @@ class TestEmbeddingSearchClient:
 
     assert success is True
     mock_client.query.assert_called_once()
+
+  @pytest.mark.asyncio
+  async def test_build_embeddings_index_uses_response_fallback(self, mock_client):
+    """Rows with only response text must be embedded, not filtered with NULL."""
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = None
+    mock_client.query.return_value = mock_query_job
+
+    client = EmbeddingSearchClient(
+        project_id="p",
+        dataset_id="d",
+        client=mock_client,
+    )
+    await client.build_embeddings_index(since_days=7)
+
+    query_str = mock_client.query.call_args[0][0]
+    assert query_str.count("COALESCE(") >= 3
+    assert "$.response" in query_str
+    assert "JSON_EXTRACT_SCALAR(e.content, '$.text_summary')" in query_str
 
 
 class TestAnomalyDetector:
@@ -513,6 +550,26 @@ class TestBatchEvaluator:
     assert results[0].efficiency == 0.8  # 8/10
     assert results[0].tool_usage == 0.7  # 7/10
     assert results[0].error is None
+
+  @pytest.mark.asyncio
+  async def test_evaluate_recent_sessions_escapes_connection_id(
+      self, mock_client
+  ):
+    """connection_id with quotes must be escaped in batch evaluation SQL."""
+    evaluator = BatchEvaluator(
+        project_id="p",
+        dataset_id="d",
+        client=mock_client,
+        connection_id="us.my'conn",
+    )
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    await evaluator.evaluate_recent_sessions(days=1, limit=10)
+
+    query_str = mock_client.query.call_args[0][0]
+    assert "connection_id => 'us.my''conn'" in query_str
 
   @pytest.mark.asyncio
   async def test_evaluate_recent_sessions_parse_error(
