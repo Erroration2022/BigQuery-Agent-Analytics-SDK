@@ -242,6 +242,25 @@ def serialize_streaming_result_row(
   }
 
 
+def compute_checkpoint_timestamp(
+    run_started_at: datetime | str,
+    overlap: timedelta,
+    earliest_pending_trigger: datetime | str | None = None,
+) -> datetime:
+  """Compute the next processor checkpoint after a successful run.
+
+  When triggers were skipped because session events were not yet
+  queryable, the checkpoint must not advance past the overlap window
+  for those triggers; otherwise they are never scanned again.
+  """
+  run_started = _coerce_timestamp(run_started_at)
+  if earliest_pending_trigger is None:
+    return run_started
+
+  pending_ceiling = _coerce_timestamp(earliest_pending_trigger) + overlap
+  return min(run_started, pending_ceiling)
+
+
 def compute_scan_start(
     run_started_at: datetime | str,
     checkpoint_timestamp: datetime | str | None = None,

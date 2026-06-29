@@ -32,6 +32,7 @@ from bigquery_agent_analytics._deploy_runtime import resolve_client_options
 from bigquery_agent_analytics._streaming_evaluation import build_streaming_observability_evaluator
 from bigquery_agent_analytics._streaming_evaluation import build_trigger_dedupe_key
 from bigquery_agent_analytics._streaming_evaluation import classify_trigger_kind
+from bigquery_agent_analytics._streaming_evaluation import compute_checkpoint_timestamp
 from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
 from bigquery_agent_analytics._streaming_evaluation import parse_trigger_payload
 from bigquery_agent_analytics._streaming_evaluation import parse_trigger_row
@@ -287,6 +288,35 @@ class TestHelpers:
     )
     assert scan_start == _NOW - timedelta(minutes=30)
 
+  def test_compute_checkpoint_timestamp_advances_normally(self):
+    checkpoint = compute_checkpoint_timestamp(
+        run_started_at=_NOW,
+        overlap=timedelta(minutes=15),
+    )
+    assert checkpoint == _NOW
+
+  def test_compute_checkpoint_timestamp_caps_for_pending_trigger(self):
+    trigger_ts = _NOW - timedelta(minutes=30)
+    checkpoint = compute_checkpoint_timestamp(
+        run_started_at=_NOW,
+        overlap=timedelta(minutes=15),
+        earliest_pending_trigger=trigger_ts,
+    )
+    assert checkpoint == trigger_ts + timedelta(minutes=15)
+
+  def test_compute_checkpoint_timestamp_keeps_trigger_in_overlap(self):
+    checkpoint = compute_checkpoint_timestamp(
+        run_started_at=_NOW,
+        overlap=timedelta(minutes=15),
+        earliest_pending_trigger=_NOW,
+    )
+    assert checkpoint == _NOW
+
+  def test_results_merge_updates_final_rows(self, streaming_worker):
+    merge_sql = streaming_worker._RESULTS_MERGE_QUERY
+    assert "WHEN MATCHED AND S.is_final THEN" in merge_sql
+    assert "UPDATE SET" in merge_sql
+
   def test_serialize_result_row_uses_session_scores(self):
     trigger = parse_trigger_payload(
         {
@@ -532,6 +562,7 @@ class TestWorker:
       monkeypatch,
       caplog,
   ):
+    trigger_ts = _NOW - timedelta(minutes=30)
     fake_bq = _FakeBigQueryClient(
         trigger_rows=[
             {
@@ -541,7 +572,7 @@ class TestWorker:
                 "event_type": "AGENT_COMPLETED",
                 "status": "OK",
                 "error_message": None,
-                "trigger_timestamp": _NOW,
+                "trigger_timestamp": trigger_ts,
                 "trigger_kind": "session_terminal",
             }
         ]
@@ -565,6 +596,19 @@ class TestWorker:
     assert response["ignored_rows"] == 1
     assert caplog.messages[-1] == (
         "No events found for session_id=sess-1; skipping trigger"
+    )
+    state_writes = [
+        job_config
+        for query, job_config in zip(fake_bq.queries, fake_bq.job_configs)
+        if "_streaming_eval_state" in query and query.lstrip().startswith("MERGE")
+    ]
+    assert len(state_writes) == 1
+    state_params = {
+        param.name: param.value
+        for param in state_writes[0].query_parameters
+    }
+    assert state_params["checkpoint_timestamp"] == trigger_ts + timedelta(
+        minutes=15
     )
 
   def test_checkpoint_does_not_advance_if_success_history_write_fails(
