@@ -36,6 +36,7 @@ from bigquery_agent_analytics import TraceFilter
 from bigquery_agent_analytics._deploy_runtime import build_client_from_context
 from bigquery_agent_analytics._deploy_runtime import resolve_client_options
 from bigquery_agent_analytics._streaming_evaluation import build_streaming_observability_evaluator
+from bigquery_agent_analytics._streaming_evaluation import compute_checkpoint_timestamp
 from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_INITIAL_LOOKBACK_MINUTES
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_OVERLAP_MINUTES
@@ -96,6 +97,13 @@ USING (
     @processed_at AS processed_at
 ) S
 ON T.dedupe_key = S.dedupe_key
+WHEN MATCHED AND S.is_final THEN
+  UPDATE SET
+    passed = S.passed,
+    aggregate_scores_json = S.aggregate_scores_json,
+    details_json = S.details_json,
+    report_json = S.report_json,
+    processed_at = S.processed_at
 WHEN NOT MATCHED THEN
   INSERT (
     dedupe_key,
@@ -280,6 +288,7 @@ def handle_scheduled_run(
         initial_lookback=config.initial_lookback,
     )
     evaluator = build_streaming_observability_evaluator()
+    earliest_pending_trigger: datetime | None = None
 
     for trigger in iter_triggers(client, config, scan_start, run_started_at):
       stats.trigger_rows_found += 1
@@ -304,6 +313,11 @@ def handle_scheduled_run(
             trigger.session_id,
         )
         stats.ignored_rows += 1
+        if (
+            earliest_pending_trigger is None
+            or trigger.trigger_timestamp < earliest_pending_trigger
+        ):
+          earliest_pending_trigger = trigger.trigger_timestamp
         continue
 
       result_row = serialize_streaming_result_row(trigger, report)
@@ -324,7 +338,12 @@ def handle_scheduled_run(
         status="success",
         error_message=None,
     )
-    update_checkpoint(client, config, run_started_at)
+    checkpoint_timestamp = compute_checkpoint_timestamp(
+        run_started_at=run_started_at,
+        overlap=config.overlap,
+        earliest_pending_trigger=earliest_pending_trigger,
+    )
+    update_checkpoint(client, config, checkpoint_timestamp)
     success_run_finalized = True
   except Exception as exc:  # pragma: no cover - exercised in tests
     logger.exception("Scheduled streaming evaluation run failed")
