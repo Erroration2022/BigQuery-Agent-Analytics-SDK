@@ -441,7 +441,7 @@ class EmbeddingSearchClient:
 
   # Primary: AI.EMBED (scalar, no model creation needed)
   _AI_EMBED_INDEX_QUERY = """
-  CREATE OR REPLACE TABLE `{project}.{dataset}.{table}_indexed` AS
+  CREATE OR REPLACE TABLE `{project}.{dataset}.{table}` AS
   SELECT
     e.session_id,
     e.invocation_id,
@@ -466,7 +466,7 @@ class EmbeddingSearchClient:
 
   # Legacy: ML.GENERATE_EMBEDDING (requires pre-created BQ ML model)
   _LEGACY_INDEX_EMBEDDINGS_QUERY = """
-  CREATE OR REPLACE TABLE `{project}.{dataset}.{table}_indexed` AS
+  CREATE OR REPLACE TABLE `{project}.{dataset}.{table}` AS
   SELECT
     e.session_id,
     e.invocation_id,
