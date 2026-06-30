@@ -328,6 +328,32 @@ class TestEmbeddingSearchClient:
 
     assert success is True
     mock_client.query.assert_called_once()
+    executed_sql = mock_client.query.call_args[0][0]
+    assert "test-dataset.trace_embeddings`" in executed_sql
+    assert "trace_embeddings_indexed" not in executed_sql
+
+  @pytest.mark.asyncio
+  async def test_search_reads_same_table_as_index_build(self, mock_client):
+    """Regression: index build and search must target the same table."""
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    client = EmbeddingSearchClient(
+        project_id="test-project",
+        dataset_id="test-dataset",
+        embeddings_table="trace_embeddings",
+        client=mock_client,
+    )
+    await client.build_embeddings_index(since_days=7)
+    build_sql = mock_client.query.call_args[0][0]
+
+    await client.search(query_embedding=[0.1, 0.2], top_k=5)
+    search_sql = mock_client.query.call_args[0][0]
+
+    assert "test-dataset.trace_embeddings`" in build_sql
+    assert "test-dataset.trace_embeddings`" in search_sql
+    assert "trace_embeddings_indexed" not in build_sql
 
 
 class TestAnomalyDetector:
