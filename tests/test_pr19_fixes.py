@@ -186,6 +186,31 @@ class TestDriftDedupedMetrics:
     )
     assert report.details["method"] == "keyword_overlap"
 
+  async def test_rejects_sql_injection_in_golden_table(self):
+    """golden_table must not break out of backtick-quoted SQL identifiers."""
+    with pytest.raises(ValueError, match="Invalid golden_table"):
+      await compute_drift(
+          bq_client=MagicMock(),
+          project_id="p",
+          dataset_id="d",
+          table_id="t",
+          golden_table="x` UNION ALL SELECT secret FROM secrets --",
+          where_clause="1=1",
+          query_params=[],
+      )
+
+  async def test_rejects_qualified_table_reference_in_golden_table(self):
+    with pytest.raises(ValueError, match="Invalid golden_table"):
+      await compute_drift(
+          bq_client=MagicMock(),
+          project_id="p",
+          dataset_id="d",
+          table_id="t",
+          golden_table="other_dataset.secrets",
+          where_clause="1=1",
+          query_params=[],
+      )
+
   async def test_semantic_drift_dedupes_totals(self):
     """Semantic drift should also use deduped counts."""
     mock_client = MagicMock()

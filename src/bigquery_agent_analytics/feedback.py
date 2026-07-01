@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from dataclasses import field
 import json
 import logging
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -389,6 +390,23 @@ def _is_legacy_model_ref(ref: str) -> bool:
   return ref.count(".") >= 2
 
 
+_TABLE_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_table_id(table_id: str, *, param_name: str = "table_id") -> str:
+  """Validate an unqualified BigQuery table identifier.
+
+  Drift queries embed ``golden_table`` directly into SQL. Reject values
+  that could break out of the backtick-quoted table reference.
+  """
+  if not table_id or not _TABLE_ID_RE.fullmatch(table_id):
+    raise ValueError(
+        f"Invalid {param_name}: {table_id!r}. Must be an unqualified "
+        "table name containing only letters, numbers, and underscores."
+    )
+  return table_id
+
+
 def _sanitize_categories(categories_str: str) -> str:
   """Escapes category text for safe embedding in SQL string literals.
 
@@ -425,6 +443,8 @@ async def compute_drift(
       DriftReport with coverage metrics.
   """
   from google.cloud import bigquery
+
+  golden_table = _validate_table_id(golden_table, param_name="golden_table")
 
   loop = asyncio.get_event_loop()
 
