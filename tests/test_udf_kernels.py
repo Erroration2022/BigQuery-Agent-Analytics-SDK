@@ -163,6 +163,9 @@ class TestScoreErrorRate:
   def test_no_calls(self):
     assert score_error_rate(0, 0, 0.1) == 1.0
 
+  def test_errors_without_calls(self):
+    assert score_error_rate(0, 1, 0.1) == 0.0
+
   def test_no_errors(self):
     assert score_error_rate(10, 0, 0.1) == 1.0
 
