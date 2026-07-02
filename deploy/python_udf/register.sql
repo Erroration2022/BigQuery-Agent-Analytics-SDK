@@ -149,6 +149,8 @@ OPTIONS (
 AS r"""
 def bqaa_score_error_rate(tool_calls, tool_errors, max_error_rate):
     if tool_calls <= 0:
+        if tool_errors > 0:
+            return 0.0
         return 1.0
     rate = tool_errors / tool_calls
     if rate >= max_error_rate:
@@ -311,6 +313,8 @@ def _score_latency(avg, thresh):
 
 def _score_error_rate(calls, errors, max_rate):
     if calls <= 0:
+        if errors > 0:
+            return 0.0
         return 1.0
     rate = errors / calls
     if rate >= max_rate:

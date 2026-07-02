@@ -85,6 +85,9 @@ def build_streaming_observability_evaluator() -> CodeEvaluator:
         _MAX_ERROR_RATE,
     )
 
+  def _score_session_errors(session_summary: dict[str, Any]) -> float:
+    return 0.0 if session_summary.get("has_error") else 1.0
+
   def _score_turn_count(session_summary: dict[str, Any]) -> float:
     return udf_kernels.score_turn_count(
         session_summary.get("turn_count", 0),
@@ -94,6 +97,7 @@ def build_streaming_observability_evaluator() -> CodeEvaluator:
   evaluator = CodeEvaluator(name=STREAMING_EVALUATOR_PROFILE)
   evaluator.add_metric("latency", _score_latency, threshold=0.5)
   evaluator.add_metric("error_rate", _score_error_rate, threshold=0.5)
+  evaluator.add_metric("session_errors", _score_session_errors, threshold=0.5)
   evaluator.add_metric("turn_count", _score_turn_count, threshold=0.5)
   return evaluator
 

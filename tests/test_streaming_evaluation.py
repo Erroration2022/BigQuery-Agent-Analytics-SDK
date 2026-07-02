@@ -218,7 +218,51 @@ class TestHelpers:
     metric_names = [metric.name for metric in evaluator._metrics]
 
     assert evaluator.name == STREAMING_EVALUATOR_PROFILE
-    assert metric_names == ["latency", "error_rate", "turn_count"]
+    assert metric_names == [
+        "latency",
+        "error_rate",
+        "session_errors",
+        "turn_count",
+    ]
+
+  def test_streaming_profile_fails_sessions_with_errors(self):
+    evaluator = build_streaming_observability_evaluator()
+    healthy = evaluator.evaluate_session(
+        {
+            "session_id": "sess-ok",
+            "avg_latency_ms": 100.0,
+            "tool_calls": 2,
+            "tool_errors": 0,
+            "turn_count": 1,
+            "has_error": False,
+        }
+    )
+    llm_error = evaluator.evaluate_session(
+        {
+            "session_id": "sess-llm-error",
+            "avg_latency_ms": 100.0,
+            "tool_calls": 0,
+            "tool_errors": 0,
+            "turn_count": 1,
+            "has_error": True,
+        }
+    )
+    tool_error_without_start = evaluator.evaluate_session(
+        {
+            "session_id": "sess-tool-error",
+            "avg_latency_ms": 100.0,
+            "tool_calls": 0,
+            "tool_errors": 1,
+            "turn_count": 1,
+            "has_error": True,
+        }
+    )
+
+    assert healthy.passed is True
+    assert llm_error.passed is False
+    assert llm_error.scores["session_errors"] == 0.0
+    assert tool_error_without_start.passed is False
+    assert tool_error_without_start.scores["error_rate"] == 0.0
 
   def test_dedupe_key_is_stable(self):
     first = build_trigger_dedupe_key(

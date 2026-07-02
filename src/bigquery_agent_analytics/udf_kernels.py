@@ -177,6 +177,8 @@ def score_error_rate(
       Score between 0.0 (worst) and 1.0 (best).
   """
   if tool_calls <= 0:
+    if tool_errors > 0:
+      return 0.0
     return 1.0
   rate = tool_errors / tool_calls
   if rate >= max_error_rate:
