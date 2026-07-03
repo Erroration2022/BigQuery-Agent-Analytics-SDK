@@ -292,6 +292,12 @@ def build_ontology_graph(
   rows_materialized = materializer.materialize(graph, session_ids)
   logger.info("Rows materialized: %s", rows_materialized)
 
+  if (graph.nodes or graph.edges) and not rows_materialized:
+    raise RuntimeError(
+        "Materialization failed — extracted graph content was not persisted. "
+        f"Nodes={len(graph.nodes)}, edges={len(graph.edges)}."
+    )
+
   # 5. Create property graph.
   compiler = OntologyPropertyGraphCompiler(
       project_id=project_id,

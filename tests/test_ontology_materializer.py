@@ -742,7 +742,7 @@ class TestMaterialize:
         ],
     )
 
-  def test_materialize_calls_delete_then_insert(self):
+  def test_materialize_inserts_then_deletes_stale_rows(self):
     mock_client = _mock_bq_client()
     mock_job = MagicMock()
     mock_job.result.return_value = None
@@ -761,10 +761,15 @@ class TestMaterialize:
     assert result["Beta"] == 1
     assert result["AlphaToBeta"] == 1
 
-    # Delete queries: 1 per entity + 1 per relationship = 3.
-    assert mock_client.query.call_count == 3
-    # Insert calls: 1 per entity + 1 per relationship = 3.
+    # Insert happens before stale-row cleanup.
     assert mock_client.insert_rows_json.call_count == 3
+    first_insert = mock_client.insert_rows_json.call_args_list[0]
+    assert first_insert[0][1][0]["extracted_at"]
+
+    # Stale cleanup runs once per successfully inserted table.
+    assert mock_client.query.call_count == 3
+    stale_delete_sql = mock_client.query.call_args_list[0][0][0]
+    assert "extracted_at !=" in stale_delete_sql
 
   def test_inserted_node_rows_have_correct_shape(self):
     mock_client = _mock_bq_client()
@@ -942,7 +947,7 @@ class TestMaterialize:
     assert result["Alpha"] == 1
     assert result["Beta"] == 1
 
-    # Only ONE delete call — both entities share the same table.
+    # Only ONE stale cleanup call — both entities share the same table.
     assert mock_client.query.call_count == 1
     delete_sql = mock_client.query.call_args_list[0][0][0]
     assert shared_table in delete_sql
@@ -954,7 +959,7 @@ class TestMaterialize:
     rows = insert_call[0][1]
     assert len(rows) == 2
 
-  def test_insert_error_does_not_crash(self):
+  def test_insert_error_does_not_delete_existing_rows(self):
     mock_client = _mock_bq_client()
     mock_job = MagicMock()
     mock_job.result.return_value = None
@@ -968,5 +973,8 @@ class TestMaterialize:
         bq_client=mock_client,
     )
     result = mat.materialize(self._make_graph(), session_ids=["sess1"])
-    # No entries in result because inserts failed.
     assert result == {}
+    # Failed inserts roll back only the new batch, never pre-delete old rows.
+    assert mock_client.query.call_count == 3
+    batch_delete_sql = mock_client.query.call_args_list[0][0][0]
+    assert "extracted_at =" in batch_delete_sql

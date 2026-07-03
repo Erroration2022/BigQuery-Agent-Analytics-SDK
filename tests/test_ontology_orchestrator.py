@@ -444,3 +444,37 @@ class TestBuildOntologyGraph:
     # Materialize and property graph should NOT have been called.
     mock_mat_cls.return_value.materialize.assert_not_called()
     mock_pg_cls.return_value.create_property_graph.assert_not_called()
+
+  @patch(
+      "bigquery_agent_analytics.ontology_property_graph"
+      ".OntologyPropertyGraphCompiler"
+  )
+  @patch("bigquery_agent_analytics.ontology_materializer.OntologyMaterializer")
+  @patch("bigquery_agent_analytics.ontology_graph.OntologyGraphManager")
+  def test_failed_materialization_raises(
+      self, mock_mgr_cls, mock_mat_cls, mock_pg_cls
+  ):
+    mock_mgr_cls.return_value.extract_graph.return_value = ExtractedGraph(
+        name="test",
+        nodes=[
+            ExtractedNode(
+                node_id="sess1:Alpha:alpha_id=a1",
+                entity_name="Alpha",
+                labels=["Alpha"],
+                properties=[],
+            )
+        ],
+    )
+    mock_mat_cls.return_value.create_tables.return_value = dict(_ALL_YMGO_TABLES)
+    mock_mat_cls.return_value.materialize.return_value = {}
+
+    with pytest.raises(RuntimeError, match="Materialization failed"):
+      build_ontology_graph(
+          session_ids=["sess1"],
+          spec_path=_DEMO_SPEC_PATH,
+          project_id="proj",
+          dataset_id="ds",
+          env="p.d",
+      )
+
+    mock_pg_cls.return_value.create_property_graph.assert_not_called()

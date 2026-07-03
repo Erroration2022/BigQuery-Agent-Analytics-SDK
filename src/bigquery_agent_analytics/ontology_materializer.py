@@ -285,6 +285,18 @@ DELETE FROM `{table_ref}`
 WHERE session_id IN UNNEST(@session_ids)
 """
 
+_DELETE_STALE_FOR_SESSIONS = """\
+DELETE FROM `{table_ref}`
+WHERE session_id IN UNNEST(@session_ids)
+  AND extracted_at != @batch_extracted_at
+"""
+
+_DELETE_BATCH_FOR_SESSIONS = """\
+DELETE FROM `{table_ref}`
+WHERE session_id IN UNNEST(@session_ids)
+  AND extracted_at = @batch_extracted_at
+"""
+
 
 # ------------------------------------------------------------------ #
 # OntologyMaterializer                                                 #
@@ -295,8 +307,8 @@ class OntologyMaterializer:
   """Persists extracted ontology graphs into BigQuery tables.
 
   Each entity and relationship in the spec maps to a physical table
-  via ``binding.source``.  Persistence uses delete-then-insert
-  (same pattern as V3) for session-scoped idempotency.
+  via ``binding.source``.  Persistence uses insert-then-delete-stale
+  for session-scoped idempotency without data loss on failed inserts.
 
   Args:
       project_id: GCP project ID.
@@ -448,18 +460,28 @@ class OntologyMaterializer:
 
   # ---- Materialization --------------------------------------------
 
-  def _delete_for_sessions(
-      self, table_ref: str, session_ids: list[str]
+  def _run_session_delete(
+      self,
+      sql_template: str,
+      table_ref: str,
+      session_ids: list[str],
+      *,
+      batch_extracted_at: str | None = None,
   ) -> None:
-    """Delete rows for given sessions from a table."""
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ArrayQueryParameter("session_ids", "STRING", session_ids),
-        ]
-    )
+    """Run a session-scoped DELETE query, logging non-fatal errors."""
+    params: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+        bigquery.ArrayQueryParameter("session_ids", "STRING", session_ids),
+    ]
+    if batch_extracted_at is not None:
+      params.append(
+          bigquery.ScalarQueryParameter(
+              "batch_extracted_at", "STRING", batch_extracted_at
+          )
+      )
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
     try:
       job = self.bq_client.query(
-          _DELETE_FOR_SESSIONS.format(table_ref=table_ref),
+          sql_template.format(table_ref=table_ref),
           job_config=job_config,
       )
       job.result()
@@ -470,6 +492,34 @@ class OntologyMaterializer:
       else:
         logger.warning("Delete for sessions failed on %s: %s", table_ref, e)
 
+  def _delete_stale_for_sessions(
+      self,
+      table_ref: str,
+      session_ids: list[str],
+      batch_extracted_at: str,
+  ) -> None:
+    """Delete prior materialization rows after a successful insert."""
+    self._run_session_delete(
+        _DELETE_STALE_FOR_SESSIONS,
+        table_ref,
+        session_ids,
+        batch_extracted_at=batch_extracted_at,
+    )
+
+  def _delete_batch_for_sessions(
+      self,
+      table_ref: str,
+      session_ids: list[str],
+      batch_extracted_at: str,
+  ) -> None:
+    """Remove a failed insert batch without touching prior materializations."""
+    self._run_session_delete(
+        _DELETE_BATCH_FOR_SESSIONS,
+        table_ref,
+        session_ids,
+        batch_extracted_at=batch_extracted_at,
+    )
+
   def materialize(
       self,
       graph: ExtractedGraph,
@@ -477,9 +527,10 @@ class OntologyMaterializer:
   ) -> dict[str, int]:
     """Materialize an ``ExtractedGraph`` into BigQuery tables.
 
-    Uses delete-then-insert for session-scoped idempotency:
-    existing rows for the given sessions are deleted before
-    inserting the new graph data.
+    Uses insert-then-delete-stale for session-scoped idempotency:
+    new rows are inserted first; prior rows for the same sessions are
+    removed only after a successful insert so failed writes never wipe
+    existing materialized data.
 
     Args:
         graph: The extracted graph to persist.
@@ -536,18 +587,32 @@ class OntologyMaterializer:
           name_counts.get(edge.relationship_name, 0) + 1
       )
 
-    # One delete + one insert per physical table.
+    batch_extracted_at = datetime.datetime.now(
+        datetime.timezone.utc
+    ).isoformat()
+
+    # One insert + stale cleanup per physical table.
     inserted_tables: set[str] = set()
     for table_ref, rows in table_rows.items():
-      self._delete_for_sessions(table_ref, session_ids)
+      for row in rows:
+        row["extracted_at"] = batch_extracted_at
       try:
         errors = self.bq_client.insert_rows_json(table_ref, rows)
         if errors:
           logger.error("Insert errors for %s: %s", table_ref, errors)
-        else:
-          inserted_tables.add(table_ref)
+          self._delete_batch_for_sessions(
+              table_ref, session_ids, batch_extracted_at
+          )
+          continue
+        self._delete_stale_for_sessions(
+            table_ref, session_ids, batch_extracted_at
+        )
+        inserted_tables.add(table_ref)
       except Exception as e:
         logger.warning("Failed to insert rows for %s: %s", table_ref, e)
+        self._delete_batch_for_sessions(
+            table_ref, session_ids, batch_extracted_at
+        )
 
     # Build result: only include names whose table insert succeeded.
     for name, count in name_counts.items():
