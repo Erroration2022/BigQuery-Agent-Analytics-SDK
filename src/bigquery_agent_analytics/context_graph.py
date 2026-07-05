@@ -576,6 +576,28 @@ WHERE decision_id IN (
 )
 """
 
+_DELETE_DECISION_POINTS_BY_IDS_QUERY = """\
+DELETE FROM `{project}.{dataset}.{decision_points_table}`
+WHERE decision_id IN UNNEST(@decision_ids)
+"""
+
+_DELETE_CANDIDATES_BY_IDS_QUERY = """\
+DELETE FROM `{project}.{dataset}.{candidates_table}`
+WHERE candidate_id IN UNNEST(@candidate_ids)
+"""
+
+_DELETE_STALE_DECISION_POINTS_FOR_SESSIONS_QUERY = """\
+DELETE FROM `{project}.{dataset}.{decision_points_table}`
+WHERE session_id IN UNNEST(@session_ids)
+  AND decision_id NOT IN UNNEST(@decision_ids)
+"""
+
+_DELETE_STALE_CANDIDATES_FOR_SESSIONS_QUERY = """\
+DELETE FROM `{project}.{dataset}.{candidates_table}`
+WHERE session_id IN UNNEST(@session_ids)
+  AND candidate_id NOT IN UNNEST(@candidate_ids)
+"""
+
 _INSERT_MADE_DECISION_EDGES_QUERY = """\
 INSERT INTO `{project}.{dataset}.{made_decision_edges_table}`
   (edge_id, span_id, decision_id, created_at)
@@ -2009,8 +2031,9 @@ class ContextGraphManager:
   ) -> bool:
     """Stores pre-extracted decision points and candidates.
 
-    This is idempotent: existing data for the same sessions is
-    deleted before inserting new rows.
+    This is idempotent: new rows are inserted first and prior rows for
+    the same sessions are removed only after all inserts succeed so a
+    failed write never wipes existing decision semantics data.
 
     Args:
         decision_points: List of DecisionPoint objects.
@@ -2028,13 +2051,13 @@ class ContextGraphManager:
       logger.warning("Failed to create decision tables: %s", e)
       return False
 
-    # Delete existing data for idempotency
     session_ids = list(
         {dp.session_id for dp in decision_points}
         | {c.session_id for c in candidates}
     )
-    if session_ids:
-      self._delete_decision_data_for_sessions(session_ids)
+    decision_ids = [dp.decision_id for dp in decision_points]
+    candidate_ids = [c.candidate_id for c in candidates]
+    inserted_decision_ids: list[str] = []
 
     if decision_points:
       dp_rows = [
@@ -2059,6 +2082,7 @@ class ContextGraphManager:
       except Exception as e:
         logger.warning("Failed to store decision points: %s", e)
         return False
+      inserted_decision_ids = decision_ids
 
     if candidates:
       cand_rows = [
@@ -2081,10 +2105,19 @@ class ContextGraphManager:
         errors = self.client.insert_rows_json(cand_table, cand_rows)
         if errors:
           logger.error("Failed to insert candidates: %s", errors)
+          self._delete_decision_points_by_ids(inserted_decision_ids)
           return False
       except Exception as e:
         logger.warning("Failed to store candidates: %s", e)
+        self._delete_decision_points_by_ids(inserted_decision_ids)
         return False
+
+    if session_ids:
+      self._delete_stale_decision_nodes(
+          session_ids,
+          decision_ids,
+          candidate_ids,
+      )
 
     logger.info(
         "Stored %d decision points, %d candidates",
@@ -2126,6 +2159,88 @@ class ContextGraphManager:
           logger.debug("Table does not exist yet: %s", e)
         else:
           logger.warning("Decision data delete failed: %s", e)
+
+  def _delete_decision_points_by_ids(self, decision_ids: list[str]) -> None:
+    """Remove decision points inserted during a failed store attempt."""
+    if not decision_ids:
+      return
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("decision_ids", "STRING", decision_ids),
+        ]
+    )
+    fmt = {
+        "project": self.project_id,
+        "dataset": self.dataset_id,
+        "decision_points_table": self.config.decision_points_table,
+    }
+    try:
+      job = self.client.query(
+          _DELETE_DECISION_POINTS_BY_IDS_QUERY.format(**fmt),
+          job_config=job_config,
+      )
+      job.result()
+    except Exception as e:
+      logger.warning("Failed to roll back decision points: %s", e)
+
+  def _delete_stale_decision_nodes(
+      self,
+      session_ids: list[str],
+      decision_ids: list[str],
+      candidate_ids: list[str],
+  ) -> None:
+    """Remove prior decision nodes after a successful insert."""
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("session_ids", "STRING", session_ids),
+        ]
+    )
+    fmt = {
+        "project": self.project_id,
+        "dataset": self.dataset_id,
+        "decision_points_table": self.config.decision_points_table,
+        "candidates_table": self.config.candidates_table,
+    }
+
+    if decision_ids:
+      dp_job_config = bigquery.QueryJobConfig(
+          query_parameters=[
+              bigquery.ArrayQueryParameter(
+                  "session_ids", "STRING", session_ids
+              ),
+              bigquery.ArrayQueryParameter(
+                  "decision_ids", "STRING", decision_ids
+              ),
+          ]
+      )
+      try:
+        job = self.client.query(
+            _DELETE_STALE_DECISION_POINTS_FOR_SESSIONS_QUERY.format(**fmt),
+            job_config=dp_job_config,
+        )
+        job.result()
+      except Exception as e:
+        logger.warning("Stale decision point cleanup failed: %s", e)
+
+    if candidate_ids:
+      cand_job_config = bigquery.QueryJobConfig(
+          query_parameters=[
+              bigquery.ArrayQueryParameter(
+                  "session_ids", "STRING", session_ids
+              ),
+              bigquery.ArrayQueryParameter(
+                  "candidate_ids", "STRING", candidate_ids
+              ),
+          ]
+      )
+      try:
+        job = self.client.query(
+            _DELETE_STALE_CANDIDATES_FOR_SESSIONS_QUERY.format(**fmt),
+            job_config=cand_job_config,
+        )
+        job.result()
+      except Exception as e:
+        logger.warning("Stale candidate cleanup failed: %s", e)
 
   def create_decision_edges(
       self,
@@ -2481,8 +2596,14 @@ class ContextGraphManager:
       if dps or cands:
         store_ok = self.store_decision_points(dps, cands)
         results["decision_points_stored"] = store_ok
-      edges_ok = self.create_decision_edges(session_ids)
-      results["decision_edges_created"] = edges_ok
+        if store_ok:
+          edges_ok = self.create_decision_edges(session_ids)
+          results["decision_edges_created"] = edges_ok
+        else:
+          results["decision_edges_created"] = False
+      else:
+        edges_ok = self.create_decision_edges(session_ids)
+        results["decision_edges_created"] = edges_ok
 
     # Step 4: Property Graph
     graph_ok = self.create_property_graph(

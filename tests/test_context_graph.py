@@ -851,6 +851,8 @@ class TestDecisionSemantics:
     ]
     result = mgr.store_decision_points(dps, [])
     assert result is False
+    delete_sql = " ".join(call[0][0] for call in mock_client.query.call_args_list)
+    assert "DELETE FROM" not in delete_sql
 
   def test_store_decision_points_table_create_failure(self):
     mock_client = MagicMock()
@@ -1289,6 +1291,9 @@ class TestDecisionSemantics:
     ]
     result = mgr.store_decision_points(dps, candidates)
     assert result is False
+    rollback_sql = " ".join(call[0][0] for call in mock_client.query.call_args_list)
+    assert "decision_id IN UNNEST(@decision_ids)" in rollback_sql
+    assert "decision_id NOT IN UNNEST(@decision_ids)" not in rollback_sql
 
   def test_create_property_graph_with_decisions(self):
     mock_client = MagicMock()
@@ -1533,8 +1538,8 @@ class TestDecisionSemantics:
     assert len(parsed) == 1
     assert parsed[0]["decision_type"] == "audience"
 
-  def test_store_decision_points_deletes_before_insert(self):
-    """Verifies idempotency: delete queries run before inserts."""
+  def test_store_decision_points_inserts_before_stale_cleanup(self):
+    """Verifies idempotency: stale rows are removed only after inserts."""
     mock_client = MagicMock()
     mock_job = MagicMock()
     mock_client.query.return_value = mock_job
@@ -1550,9 +1555,49 @@ class TestDecisionSemantics:
         ),
     ]
     mgr.store_decision_points(dps, [])
-    # Queries: 4 table creates + 4 deletes + 1 insert_rows_json
-    # At minimum, query was called for ensures + deletes
-    assert mock_client.query.call_count >= 4
+    assert mock_client.insert_rows_json.call_count == 1
+    delete_sql = " ".join(call[0][0] for call in mock_client.query.call_args_list)
+    assert "decision_id NOT IN UNNEST(@decision_ids)" in delete_sql
+
+  def test_build_context_graph_skips_edges_when_store_fails(self):
+    mock_client = MagicMock()
+    mock_job = MagicMock()
+    mock_job.result.return_value = []
+    mock_client.query.return_value = mock_job
+    mock_client.insert_rows_json.return_value = [{"errors": ["insert failed"]}]
+    mgr = self._make_manager(mock_client)
+
+    dps = [
+        DecisionPoint(
+            decision_id="dp-1",
+            session_id="sess-1",
+            span_id="s5",
+            decision_type="test",
+        ),
+    ]
+    candidates = [
+        Candidate(
+            candidate_id="c-1",
+            decision_id="dp-1",
+            session_id="sess-1",
+            name="Test",
+            score=0.5,
+        ),
+    ]
+
+    with patch.object(
+        mgr,
+        "extract_decision_points",
+        return_value=(dps, candidates),
+    ):
+      results = mgr.build_context_graph(
+          session_ids=["sess-1"],
+          use_ai_generate=False,
+          include_decisions=True,
+      )
+
+    assert results["decision_points_stored"] is False
+    assert results["decision_edges_created"] is False
 
   def test_decision_ddl_edge_source_dest_types(self):
     """MadeDecision: TechNode->DecisionPoint,
