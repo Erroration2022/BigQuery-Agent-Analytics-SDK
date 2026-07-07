@@ -276,6 +276,11 @@ class GraderPipeline:
     self.strategy = strategy
     self._graders: list[_GraderEntry] = []
 
+  def _register_grader_weight(self, name: str, weight: float) -> None:
+    """Sync explicit grader weights into ``WeightedStrategy``."""
+    if isinstance(self.strategy, WeightedStrategy) and weight != 1.0:
+      self.strategy.weights[name] = weight
+
   def add_code_grader(
       self,
       evaluator: CodeEvaluator,
@@ -298,6 +303,7 @@ class GraderPipeline:
             is_async=False,
         )
     )
+    self._register_grader_weight(evaluator.name, weight)
     return self
 
   def add_llm_grader(
@@ -322,6 +328,7 @@ class GraderPipeline:
             is_async=True,
         )
     )
+    self._register_grader_weight(judge.name, weight)
     return self
 
   def add_custom_grader(
@@ -351,6 +358,7 @@ class GraderPipeline:
             is_async=False,
         )
     )
+    self._register_grader_weight(name, weight)
     return self
 
   async def evaluate(

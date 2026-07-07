@@ -267,6 +267,36 @@ class TestGraderPipeline:
     assert len(pipeline._graders) == 2
 
   @pytest.mark.asyncio
+  async def test_add_grader_weights_applied_to_weighted_strategy(self):
+    """Weights passed to add_*_grader must affect aggregation."""
+
+    def latency_grader(ctx):
+      return GraderResult(
+          grader_name="latency",
+          scores={"latency": 0.9},
+          passed=True,
+      )
+
+    def correctness_grader(ctx):
+      return GraderResult(
+          grader_name="correctness",
+          scores={"correctness": 0.3},
+          passed=False,
+      )
+
+    pipeline = (
+        GraderPipeline(WeightedStrategy(threshold=0.6))
+        .add_custom_grader("latency", latency_grader, weight=0.1)
+        .add_custom_grader("correctness", correctness_grader, weight=0.9)
+    )
+
+    verdict = await pipeline.evaluate()
+
+    # Equal weights would yield (0.9 + 0.3) / 2 = 0.6 (false pass).
+    assert verdict.final_score == pytest.approx(0.36)
+    assert verdict.passed is False
+
+  @pytest.mark.asyncio
   async def test_grader_exception_handled(self):
     """Test that grader exceptions produce a failed result."""
 
