@@ -272,16 +272,29 @@ class TestGetExtractionSql:
     assert "proj.ds.my_events" in sql
 
   def test_sql_escapes_single_quotes(self):
+    spec = GraphSpec(
+        name="quote_test",
+        entities=[
+            EntitySpec(
+                name="Alpha",
+                description="The user's decision point",
+                binding=BindingSpec(source="p.d.t"),
+                keys=KeySpec(primary=["alpha_id"]),
+                properties=[PropertySpec(name="alpha_id", type="string")],
+                labels=["Alpha"],
+            )
+        ],
+        relationships=[],
+    )
     mgr = OntologyGraphManager(
         project_id="proj",
         dataset_id="ds",
-        spec=_simple_spec(),
+        spec=spec,
         bq_client=_mock_bq_client(),
     )
     sql = mgr.get_extraction_sql()
-    # The prompt and schema are wrapped in single-quoted SQL strings,
-    # so any internal single quotes must be escaped.
-    assert "endpoint =>" in sql
+    assert "user''s decision point" in sql
+    assert "user\\'s decision point" not in sql
 
   def test_sql_aggregates_per_session(self):
     """SQL uses a CTE to aggregate events into per-session transcripts."""

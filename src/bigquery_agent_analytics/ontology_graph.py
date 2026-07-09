@@ -65,10 +65,9 @@ logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 def _escape_sql_literal(value: str) -> str:
   """Escape a Python string for embedding in a BigQuery SQL single-quoted literal.
 
-  Escapes single quotes (``'`` → ``\\'``) and newlines (``\\n`` → ``\\\\n``)
-  so that the resulting SQL string literal is syntactically valid.
+  GoogleSQL escapes single quotes by doubling them (``'`` → ``''``).
   """
-  return value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+  return value.replace("'", "''")
 
 
 _EXTRACT_ONTOLOGY_AI_QUERY = """\

@@ -954,6 +954,49 @@ class TestMaterialize:
     rows = insert_call[0][1]
     assert len(rows) == 2
 
+  def test_multi_session_delete_scoped_to_replacement_rows(self):
+    """Sessions without extracted rows must not be deleted from tables."""
+    graph = ExtractedGraph(
+        name="partial",
+        nodes=[
+            ExtractedNode(
+                node_id="sessA:Alpha:alpha_id=a1",
+                entity_name="Alpha",
+                labels=["Alpha"],
+                properties=[
+                    ExtractedProperty(name="alpha_id", value="a1"),
+                    ExtractedProperty(name="score", value=0.9),
+                ],
+            ),
+        ],
+    )
+
+    mock_client = _mock_bq_client()
+    mock_job = MagicMock()
+    mock_job.result.return_value = None
+    mock_client.query.return_value = mock_job
+    mock_client.insert_rows_json.return_value = []
+
+    mat = OntologyMaterializer(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        bq_client=mock_client,
+    )
+    mat.materialize(graph, session_ids=["sessA", "sessB"])
+
+    deleted_session_sets = []
+    for call in mock_client.query.call_args_list:
+      job_config = call.kwargs.get("job_config") or call[1].get("job_config")
+      if job_config is None:
+        continue
+      for param in job_config.query_parameters:
+        if param.name == "session_ids":
+          deleted_session_sets.append(list(param.values))
+
+    assert deleted_session_sets
+    assert all(sessions == ["sessA"] for sessions in deleted_session_sets)
+
   def test_insert_error_does_not_crash(self):
     mock_client = _mock_bq_client()
     mock_job = MagicMock()
