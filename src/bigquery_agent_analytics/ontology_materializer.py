@@ -536,10 +536,21 @@ class OntologyMaterializer:
           name_counts.get(edge.relationship_name, 0) + 1
       )
 
-    # One delete + one insert per physical table.
+    # One delete + one insert per physical table.  Scope deletes to
+    # sessions present in the replacement rows so a failed extraction
+    # for one session in a multi-session batch cannot wipe another
+    # session's previously materialized data.
     inserted_tables: set[str] = set()
     for table_ref, rows in table_rows.items():
-      self._delete_for_sessions(table_ref, session_ids)
+      sessions_to_replace = sorted(
+          {
+              row["session_id"]
+              for row in rows
+              if row.get("session_id")
+          }
+      )
+      if sessions_to_replace:
+        self._delete_for_sessions(table_ref, sessions_to_replace)
       try:
         errors = self.bq_client.insert_rows_json(table_ref, rows)
         if errors:
