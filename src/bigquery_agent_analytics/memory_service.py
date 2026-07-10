@@ -289,6 +289,7 @@ class BigQueryEpisodicMemory:
   FROM `{project}.{dataset}.{embeddings_table}` base
   WHERE base.user_id = @user_id
     AND base.embedding IS NOT NULL
+    AND base.timestamp > @since_timestamp
   ORDER BY distance ASC
   LIMIT @top_k
   """
@@ -385,6 +386,9 @@ class BigQueryEpisodicMemory:
                 "query_embedding", "FLOAT64", query_embedding
             ),
             bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
+            bigquery.ScalarQueryParameter(
+                "since_timestamp", "TIMESTAMP", since_timestamp
+            ),
         ]
     )
 

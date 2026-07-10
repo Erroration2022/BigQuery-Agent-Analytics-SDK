@@ -219,6 +219,41 @@ class TestBigQueryEpisodicMemory:
     assert weather_episode is not None
     assert weather_episode.similarity_score > 0
 
+  @pytest.mark.asyncio
+  async def test_vector_search_applies_since_timestamp_filter(
+      self, episodic_memory, mock_client
+  ):
+    """Vector search must honor since_days like the keyword fallback."""
+    since_timestamp = datetime.now(timezone.utc) - timedelta(days=7)
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    with patch.object(
+        episodic_memory,
+        "_generate_embedding",
+        new=AsyncMock(return_value=[0.1, 0.2, 0.3]),
+    ):
+      await episodic_memory._vector_similarity_search(
+          query="weather forecast",
+          user_id="user-123",
+          top_k=5,
+          since_timestamp=since_timestamp,
+      )
+
+    mock_client.query.assert_called_once()
+    _, kwargs = mock_client.query.call_args
+    job_config = kwargs["job_config"]
+    param_names = {p.name for p in job_config.query_parameters}
+    assert "since_timestamp" in param_names
+    since_param = next(
+        p for p in job_config.query_parameters if p.name == "since_timestamp"
+    )
+    assert since_param.value == since_timestamp
+    assert "base.timestamp > @since_timestamp" in kwargs.get(
+        "query", mock_client.query.call_args[0][0]
+    )
+
 
 class TestContextManager:
   """Tests for ContextManager class."""
