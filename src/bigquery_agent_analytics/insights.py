@@ -412,7 +412,7 @@ FROM `{project}.{dataset}.{table}`
 WHERE {where}
 GROUP BY session_id
 HAVING event_count >= @min_events
-  AND turn_count >= @min_turns
+  AND turn_count >= @min_turns{session_having_and}
 ORDER BY start_time DESC
 LIMIT @max_sessions
 """

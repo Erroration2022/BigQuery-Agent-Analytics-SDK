@@ -239,7 +239,7 @@ SELECT
 FROM `{project}.{dataset}.{table}`
 WHERE {where}
 GROUP BY session_id
-HAVING LENGTH(transcript) > 10
+HAVING LENGTH(transcript) > 10{session_having_and}
 LIMIT @trace_limit
 """
 
@@ -264,7 +264,7 @@ WITH session_transcripts AS (
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
-  HAVING LENGTH(transcript) > 10
+  HAVING LENGTH(transcript) > 10{session_having_and}
   LIMIT @trace_limit
 )
 SELECT
@@ -322,6 +322,7 @@ def build_ai_classify_query(
     where: str,
     endpoint: Optional[str] = None,
     connection_id: Optional[str] = None,
+    session_having_and: str = "",
 ) -> str:
   """Builds a BigQuery SQL query using AI.CLASSIFY.
 
@@ -384,7 +385,7 @@ WITH session_transcripts AS (
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
-  HAVING LENGTH(transcript) > 10
+  HAVING LENGTH(transcript) > 10{session_having_and}
   LIMIT @trace_limit
 )
 SELECT
@@ -408,6 +409,7 @@ def build_ai_generate_query(
     endpoint: str,
     temperature: float,
     connection_id: Optional[str] = None,
+    session_having_and: str = "",
 ) -> str:
   """Builds the AI.GENERATE categorical classification query.
 
@@ -452,7 +454,7 @@ WITH session_transcripts AS (
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
-  HAVING LENGTH(transcript) > 10
+  HAVING LENGTH(transcript) > 10{session_having_and}
   LIMIT @trace_limit
 )
 SELECT

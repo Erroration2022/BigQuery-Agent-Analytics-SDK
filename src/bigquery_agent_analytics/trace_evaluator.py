@@ -651,6 +651,7 @@ Required JSON format:
 
     # LLM-as-judge evaluation
     llm_feedback = None
+    llm_scores: dict[str, float] = {}
     if use_llm_judge:
       llm_scores, llm_feedback = await self._llm_judge_evaluate(
           trace=trace,
@@ -677,6 +678,10 @@ Required JSON format:
       if score < threshold:
         passed = False
         details[f"{metric_name}_threshold"] = threshold
+
+    if use_llm_judge and not llm_scores:
+      passed = False
+      details["llm_judge_error"] = "LLM judge produced no scores"
 
     # Compute overall score as mean
     overall_score = None

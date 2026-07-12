@@ -363,12 +363,14 @@ class TestCanonicalErrorPredicates:
     assert len(errors) == 2
 
   def test_trace_filter_has_error_uses_canonical_predicate(self):
-    """TraceFilter.has_error should use full canonical SQL."""
+    """TraceFilter.has_error should use session-level canonical SQL."""
     filt = TraceFilter(has_error=True)
     where, _ = filt.to_sql_conditions()
-    assert "ENDS_WITH(event_type, '_ERROR')" in where
-    assert "error_message IS NOT NULL" in where
-    assert "status = 'ERROR'" in where
+    assert "ENDS_WITH(event_type, '_ERROR')" not in where
+    having = filt.session_error_having()
+    assert "ENDS_WITH(event_type, '_ERROR')" in having
+    assert "error_message IS NOT NULL" in having
+    assert "status = 'ERROR'" in having
 
   def test_evaluator_query_uses_canonical_predicate(self):
     """SESSION_SUMMARY_QUERY should use canonical error predicate."""

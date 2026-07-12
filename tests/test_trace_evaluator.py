@@ -466,6 +466,36 @@ class TestBigQueryTraceEvaluator:
     assert "response_match" in result.scores
     assert result.scores["response_match"] == 1.0
 
+  @pytest.mark.asyncio
+  async def test_evaluate_session_fails_when_llm_judge_returns_no_scores(
+      self, evaluator, mock_client
+  ):
+    """LLM judge enabled with empty scores must not vacuously pass."""
+    mock_results = [
+        {
+            "event_type": "AGENT_COMPLETED",
+            "agent": "agent",
+            "timestamp": datetime.now(timezone.utc),
+            "content": '{"response": "done"}',
+            "attributes": "{}",
+            "span_id": "span-1",
+            "status": "OK",
+        },
+    ]
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = mock_results
+    mock_client.query.return_value = mock_query_job
+
+    evaluator._llm_judge_evaluate = AsyncMock(return_value=({}, ""))
+
+    result = await evaluator.evaluate_session(
+        session_id="sess-123",
+        use_llm_judge=True,
+    )
+
+    assert result.eval_status == EvalStatus.FAILED
+    assert result.details.get("llm_judge_error") == "LLM judge produced no scores"
+
   def test_compute_response_match_exact(self, evaluator):
     """Test exact response matching."""
     score = evaluator._compute_response_match(

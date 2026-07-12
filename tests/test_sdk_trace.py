@@ -469,7 +469,8 @@ class TestTraceFilter:
   def test_error_filter(self):
     filt = TraceFilter(has_error=True)
     where, _ = filt.to_sql_conditions()
-    assert "status = 'ERROR'" in where
+    assert "status = 'ERROR'" not in where
+    assert "COUNTIF(ENDS_WITH(event_type, '_ERROR')" in filt.session_error_having()
 
   def test_session_ids_filter(self):
     filt = TraceFilter(session_ids=["s1", "s2"])
@@ -491,7 +492,8 @@ class TestTraceFilter:
     where, _ = filt.to_sql_conditions()
     assert " AND " in where
     assert "agent = @agent_id" in where
-    assert "status = 'ERROR'" in where
+    assert "status = 'ERROR'" not in where
+    assert filt.session_error_having().startswith("HAVING ")
     assert "user_id = @user_id" in where
 
 

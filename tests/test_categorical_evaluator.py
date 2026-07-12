@@ -539,6 +539,7 @@ class TestCategoricalAIGenerateQuery:
         where="1=1",
         endpoint="gemini-2.5-flash",
         temperature=0.0,
+        session_having_and="",
     )
     assert "p.d.t" in formatted
     assert "gemini-2.5-flash" in formatted
@@ -572,6 +573,7 @@ class TestCategoricalTranscriptQuery:
         dataset="d",
         table="t",
         where="1=1",
+        session_having_and="",
     )
     assert "p.d.t" in formatted
 

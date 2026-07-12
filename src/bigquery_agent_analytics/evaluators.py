@@ -721,6 +721,7 @@ SELECT
 FROM `{project}.{dataset}.{table}`
 WHERE {where}
 GROUP BY session_id
+{session_having}
 LIMIT @trace_limit
 """
 
@@ -746,7 +747,7 @@ WITH session_traces AS (
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
-  HAVING LENGTH(trace_text) > 10
+  HAVING LENGTH(trace_text) > 10{session_having_and}
   LIMIT @trace_limit
 )
 SELECT
@@ -790,7 +791,7 @@ WITH session_traces AS (
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
   GROUP BY session_id
-  HAVING LENGTH(trace_text) > 10
+  HAVING LENGTH(trace_text) > 10{session_having_and}
   LIMIT @trace_limit
 )
 SELECT

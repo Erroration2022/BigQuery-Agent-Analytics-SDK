@@ -361,6 +361,42 @@ def _parse_time_window(window: str) -> datetime:
   return datetime.now(timezone.utc) - delta
 
 
+SESSION_ERROR_COUNTIF = (
+    "COUNTIF(ENDS_WITH(event_type, '_ERROR')"
+    " OR error_message IS NOT NULL"
+    " OR status = 'ERROR')"
+)
+
+
+def escape_sql_string_literal(value: str) -> str:
+  """Doubles single quotes for safe embedding in SQL string literals."""
+  return value.replace("'", "''")
+
+
+def session_error_having_clause(
+    has_error: Optional[bool],
+    extra_conditions: Optional[list[str]] = None,
+) -> str:
+  """Builds a session-level HAVING clause for error filtering."""
+  conditions = list(extra_conditions or [])
+  if has_error is True:
+    conditions.append(f"{SESSION_ERROR_COUNTIF} > 0")
+  elif has_error is False:
+    conditions.append(f"{SESSION_ERROR_COUNTIF} = 0")
+  if not conditions:
+    return ""
+  return "HAVING " + " AND ".join(conditions)
+
+
+def session_error_having_suffix(has_error: Optional[bool]) -> str:
+  """Appends session error predicates to an existing HAVING clause."""
+  if has_error is True:
+    return f" AND {SESSION_ERROR_COUNTIF} > 0"
+  if has_error is False:
+    return f" AND {SESSION_ERROR_COUNTIF} = 0"
+  return ""
+
+
 @dataclass
 class TraceFilter:
   """Filtering criteria for listing traces.
@@ -488,18 +524,6 @@ class TraceFilter:
               self.session_ids,
           )
       )
-    if self.has_error is True:
-      conditions.append(
-          "(ENDS_WITH(event_type, '_ERROR')"
-          " OR error_message IS NOT NULL"
-          " OR status = 'ERROR')"
-      )
-    elif self.has_error is False:
-      conditions.append(
-          "NOT ENDS_WITH(event_type, '_ERROR')"
-          " AND error_message IS NULL"
-          " AND status != 'ERROR'"
-      )
     if self.error_type:
       conditions.append("error_message LIKE @error_type")
       params.append(
@@ -595,6 +619,17 @@ class TraceFilter:
 
     where = " AND ".join(conditions) if conditions else "TRUE"
     return where, params
+
+  def session_error_having(
+      self,
+      extra_conditions: Optional[list[str]] = None,
+  ) -> str:
+    """Returns a session-level HAVING clause for has_error filtering."""
+    return session_error_having_clause(self.has_error, extra_conditions)
+
+  def session_error_having_suffix(self) -> str:
+    """Returns an AND suffix for queries with an existing HAVING clause."""
+    return session_error_having_suffix(self.has_error)
 
 
 @dataclass
