@@ -98,6 +98,7 @@ from .insights import parse_facet_response
 from .insights import run_analysis_prompt
 from .insights import SessionFacet
 from .insights import SessionMetadata
+from .trace import escape_sql_string_literal
 from .trace import Span
 from .trace import Trace
 from .trace import TraceFilter
@@ -134,9 +135,11 @@ ORDER BY timestamp ASC
 
 _LIST_TRACES_QUERY = """\
 WITH trace_sessions AS (
-  SELECT DISTINCT session_id
+  SELECT session_id
   FROM `{project}.{dataset}.{table}`
   WHERE {where}
+  GROUP BY session_id
+  {session_having}
   LIMIT @trace_limit
 )
 SELECT
@@ -794,6 +797,7 @@ class Client:
         dataset=self.dataset_id,
         table=self.table_id,
         where=where,
+        session_having=filt.session_error_having(),
     )
     job_config = bigquery.QueryJobConfig(
         query_parameters=params,
@@ -845,6 +849,7 @@ class Client:
           table,
           where,
           params,
+          filt,
       )
     elif isinstance(evaluator, LLMAsJudge):
       report = self._evaluate_llm_judge(
@@ -866,6 +871,7 @@ class Client:
       table: str,
       where: str,
       params: list,
+      trace_filter: TraceFilter,
   ) -> EvaluationReport:
     """Runs code-based evaluation using session summaries."""
     query = SESSION_SUMMARY_QUERY.format(
@@ -873,6 +879,7 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         where=where,
+        session_having=trace_filter.session_error_having(),
     )
     job_config = bigquery.QueryJobConfig(
         query_parameters=params,
@@ -935,6 +942,7 @@ class Client:
               table,
               where,
               params,
+              trace_filter,
           )
           criterion_reports.append((criterion, report))
         return _merge_criterion_reports(
@@ -966,6 +974,7 @@ class Client:
             where,
             params,
             text_model,
+            trace_filter,
         )
         criterion_reports.append((criterion, report))
       return _merge_criterion_reports(
@@ -981,7 +990,9 @@ class Client:
       )
 
     # Fallback: fetch traces using same table/filter, evaluate via API
-    return self._api_judge(evaluator, table, where, params)
+    return self._api_judge(
+        evaluator, table, where, params, trace_filter or TraceFilter()
+    )
 
   def _ai_generate_judge(
       self,
@@ -990,6 +1001,7 @@ class Client:
       table,
       where,
       params,
+      trace_filter: Optional[TraceFilter] = None,
   ) -> EvaluationReport:
     """Evaluates using BigQuery AI.GENERATE with typed output."""
     from google.cloud import bigquery as bq
@@ -1007,7 +1019,8 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         where=where,
-        endpoint=self.endpoint,
+        endpoint=escape_sql_string_literal(self.endpoint),
+        session_having_and=(trace_filter or TraceFilter()).session_error_having_suffix(),
     )
     job_config = bq.QueryJobConfig(
         query_parameters=judge_params,
@@ -1054,6 +1067,7 @@ class Client:
       where,
       params,
       text_model,
+      trace_filter: Optional[TraceFilter] = None,
   ) -> EvaluationReport:
     """Evaluates using BigQuery ML.GENERATE_TEXT."""
     from google.cloud import bigquery as bq
@@ -1072,6 +1086,7 @@ class Client:
         table=table,
         where=where,
         model=text_model,
+        session_having_and=(trace_filter or TraceFilter()).session_error_having_suffix(),
     )
     job_config = bq.QueryJobConfig(
         query_parameters=judge_params,
@@ -1120,6 +1135,7 @@ class Client:
       table,
       where,
       params,
+      trace_filter: TraceFilter,
   ) -> EvaluationReport:
     """Evaluates using the Gemini API (fallback).
 
@@ -1132,6 +1148,7 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         where=where,
+        session_having=trace_filter.session_error_having(),
     )
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     results = list(self.bq_client.query(query, job_config=job_config).result())
@@ -1200,6 +1217,7 @@ class Client:
     table = dataset or self.table_id
     filt = filters or TraceFilter()
     where, params = filt.to_sql_conditions()
+    session_having_and = filt.session_error_having_suffix()
 
     # Endpoint precedence: config.endpoint wins when explicitly set.
     # When config uses the default, fall back to client.endpoint —
@@ -1230,6 +1248,7 @@ class Client:
             params,
             endpoint,
             connection_id,
+            session_having_and,
         )
         report = build_categorical_report(
             dataset=f"{table_ref} WHERE {where}",
@@ -1257,6 +1276,7 @@ class Client:
           params,
           endpoint,
           connection_id,
+          session_having_and,
       )
       report = build_categorical_report(
           dataset=f"{table_ref} WHERE {where}",
@@ -1283,6 +1303,7 @@ class Client:
           where,
           params,
           endpoint,
+          session_having_and,
       )
       report = build_categorical_report(
           dataset=f"{table_ref} WHERE {where}",
@@ -1315,6 +1336,7 @@ class Client:
       params: list,
       endpoint: str,
       connection_id: Optional[str] = None,
+      session_having_and: str = "",
   ) -> tuple[list, int]:
     """Classifies sessions using BigQuery AI.CLASSIFY.
 
@@ -1329,6 +1351,7 @@ class Client:
         where=where,
         endpoint=endpoint,
         connection_id=connection_id,
+        session_having_and=session_having_and,
     )
 
     job_config = bigquery.QueryJobConfig(
@@ -1355,6 +1378,7 @@ class Client:
       params: list,
       endpoint: str,
       connection_id: Optional[str] = None,
+      session_having_and: str = "",
   ) -> list:
     """Classifies sessions using BigQuery AI.GENERATE."""
     prompt = build_categorical_prompt(config)
@@ -1367,6 +1391,7 @@ class Client:
         endpoint=endpoint,
         temperature=config.temperature,
         connection_id=connection_id,
+        session_having_and=session_having_and,
     )
 
     query_params = list(params) + [
@@ -1396,6 +1421,7 @@ class Client:
       where: str,
       params: list,
       endpoint: str,
+      session_having_and: str = "",
   ) -> list:
     """Classifies sessions using the Gemini API (fallback).
 
@@ -1408,6 +1434,7 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         where=where,
+        session_having_and=session_having_and,
     )
     job_config = bigquery.QueryJobConfig(query_parameters=list(params))
     rows = list(self.bq_client.query(query, job_config=job_config).result())
@@ -1613,6 +1640,7 @@ class Client:
         where,
         params,
         cfg,
+        filt.session_error_having_suffix(),
     )
 
     if not metadata_list:
@@ -1664,6 +1692,7 @@ class Client:
       where: str,
       params: list,
       config: InsightsConfig,
+      session_having_and: str = "",
   ) -> list[SessionMetadata]:
     """Fetches session metadata from BigQuery."""
     from google.cloud import bigquery as bq
@@ -1693,6 +1722,7 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         where=where,
+        session_having_and=session_having_and,
     )
     job_config = bq.QueryJobConfig(
         query_parameters=extra_params,
@@ -1786,7 +1816,7 @@ class Client:
         project=self.project_id,
         dataset=self.dataset_id,
         table=table,
-        endpoint=self.endpoint,
+        endpoint=escape_sql_string_literal(self.endpoint),
     )
     job_config = bq.QueryJobConfig(
         query_parameters=[
