@@ -162,6 +162,66 @@ class TestBigQuerySessionMemory:
     assert episodes[0].user_message == "Previous question"
     assert episodes[0].agent_response == "Previous answer"
 
+  @pytest.mark.asyncio
+  async def test_get_recent_context_multi_turn_session(
+      self, session_memory, mock_client
+  ):
+    """Multi-turn sessions should use first user message and final response."""
+    base_time = datetime.now(timezone.utc) - timedelta(hours=2)
+    mock_results = [
+        {
+            "session_id": "sess-old-1",
+            "event_type": "USER_MESSAGE_RECEIVED",
+            "timestamp": base_time,
+            "content_summary": "First question",
+            "response": None,
+            "agent": "agent",
+        },
+        {
+            "session_id": "sess-old-1",
+            "event_type": "AGENT_COMPLETED",
+            "timestamp": base_time + timedelta(minutes=1),
+            "content_summary": None,
+            "response": "First answer",
+            "agent": "agent",
+        },
+        {
+            "session_id": "sess-old-1",
+            "event_type": "USER_MESSAGE_RECEIVED",
+            "timestamp": base_time + timedelta(minutes=2),
+            "content_summary": "Follow-up question",
+            "response": None,
+            "agent": "agent",
+        },
+        {
+            "session_id": "sess-old-1",
+            "event_type": "AGENT_COMPLETED",
+            "timestamp": base_time + timedelta(minutes=3),
+            "content_summary": None,
+            "response": "Final answer",
+            "agent": "agent",
+        },
+    ]
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = mock_results
+    mock_client.query.return_value = mock_query_job
+
+    episodes = await session_memory.get_recent_context(
+        user_id="user-123",
+        current_session_id="sess-current",
+    )
+
+    assert len(episodes) == 1
+    assert episodes[0].user_message == "First question"
+    assert episodes[0].agent_response == "Final answer"
+
+  def test_recent_context_query_orders_ascending(self):
+    """Episode assembly expects chronological event order."""
+    from bigquery_agent_analytics.memory_service import BigQuerySessionMemory
+
+    assert "ORDER BY e.timestamp ASC" in BigQuerySessionMemory._RECENT_CONTEXT_QUERY
+
 
 class TestBigQueryEpisodicMemory:
   """Tests for BigQueryEpisodicMemory class."""
@@ -375,6 +435,17 @@ class TestUserProfileBuilder:
     assert profile.user_id == "user-123"
     assert profile.session_count == 25
     assert profile.preferred_tools == ["search", "format", "send"]
+
+  def test_user_stats_query_counts_all_sessions(self):
+    """Session count must include sessions without tool calls."""
+    from bigquery_agent_analytics.memory_service import UserProfileBuilder
+
+    query = UserProfileBuilder._USER_STATS_QUERY
+    where_clause = query.split("WHERE user_id = @user_id")[1]
+    assert "COUNT(DISTINCT session_id)" in query
+    assert "event_type = 'TOOL_COMPLETED'" not in where_clause
+    assert "IF(" in query
+    assert "event_type = 'TOOL_COMPLETED'" in query
 
 
 class TestBigQueryMemoryService:

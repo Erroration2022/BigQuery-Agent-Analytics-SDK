@@ -157,7 +157,7 @@ class BigQuerySessionMemory:
   WHERE e.event_type IN (
     'USER_MESSAGE_RECEIVED', 'LLM_RESPONSE', 'AGENT_COMPLETED'
   )
-  ORDER BY e.timestamp DESC
+  ORDER BY e.timestamp ASC
   LIMIT @max_events
   """
 
@@ -251,7 +251,7 @@ class BigQuerySessionMemory:
           episodes[session_id].user_message = content
       elif event_type in ("LLM_RESPONSE", "AGENT_COMPLETED"):
         response = row.get("response") or row.get("content_summary")
-        if response and not episodes[session_id].agent_response:
+        if response:
           episodes[session_id].agent_response = response
 
     return list(episodes.values())
@@ -695,10 +695,15 @@ class UserProfileBuilder:
   SELECT
     COUNT(DISTINCT session_id) as session_count,
     MAX(timestamp) as last_interaction,
-    ARRAY_AGG(DISTINCT JSON_EXTRACT_SCALAR(content, '$.tool')) as tools_used
+    ARRAY_AGG(
+      DISTINCT IF(
+        event_type = 'TOOL_COMPLETED',
+        JSON_EXTRACT_SCALAR(content, '$.tool'),
+        NULL
+      ) IGNORE NULLS
+    ) as tools_used
   FROM `{project}.{dataset}.{table}`
   WHERE user_id = @user_id
-    AND event_type = 'TOOL_COMPLETED'
   """
 
   _USER_MESSAGES_QUERY = """
