@@ -219,6 +219,29 @@ class TestBigQueryEpisodicMemory:
     assert weather_episode is not None
     assert weather_episode.similarity_score > 0
 
+  @pytest.mark.asyncio
+  async def test_keyword_search_filters_by_app_name(
+      self, episodic_memory, mock_client
+  ):
+    """Episodic keyword search must scope results to the requesting app."""
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    await episodic_memory.retrieve_similar_episodes(
+        query="weather forecast",
+        user_id="user-123",
+        top_k=5,
+        app_name="hr_assistant",
+    )
+
+    sql = mock_client.query.call_args[0][0]
+    job_config = mock_client.query.call_args[1]["job_config"]
+    param_names = [param.name for param in job_config.query_parameters]
+
+    assert "agent = @app_name" in sql
+    assert "app_name" in param_names
+
 
 class TestContextManager:
   """Tests for ContextManager class."""
@@ -420,6 +443,32 @@ class TestBigQueryMemoryService:
     )
 
     assert response.memories is not None
+
+  @pytest.mark.asyncio
+  async def test_search_memory_passes_app_name_filter(
+      self, memory_service, mock_client
+  ):
+    """search_memory must pass app_name through to episodic retrieval."""
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    await memory_service.search_memory(
+        app_name="medical_assistant",
+        user_id="user-123",
+        query="symptoms",
+    )
+
+    sql = mock_client.query.call_args[0][0]
+    job_config = mock_client.query.call_args[1]["job_config"]
+    param_names = [param.name for param in job_config.query_parameters]
+
+    assert "agent = @app_name" in sql
+    assert "app_name" in param_names
+    assert any(
+        param.name == "app_name" and param.value == "medical_assistant"
+        for param in job_config.query_parameters
+    )
 
   @pytest.mark.asyncio
   async def test_add_session_to_memory(self, memory_service):
