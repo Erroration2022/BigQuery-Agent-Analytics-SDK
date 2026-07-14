@@ -275,6 +275,7 @@ class BigQueryEpisodicMemory:
   WHERE user_id = @user_id
     AND event_type = 'USER_MESSAGE_RECEIVED'
     AND timestamp > @since_timestamp
+    {app_name_filter}
   ORDER BY timestamp DESC
   LIMIT @limit
   """
@@ -289,6 +290,7 @@ class BigQueryEpisodicMemory:
   FROM `{project}.{dataset}.{embeddings_table}` base
   WHERE base.user_id = @user_id
     AND base.embedding IS NOT NULL
+    {app_name_filter}
   ORDER BY distance ASC
   LIMIT @top_k
   """
@@ -326,12 +328,43 @@ class BigQueryEpisodicMemory:
       self._client = bigquery.Client(project=self.project_id)
     return self._client
 
+  def _app_name_filter_sql(self, app_name: Optional[str]) -> tuple[str, list]:
+    """Builds optional app_name isolation filter for episodic search."""
+    if not app_name:
+      return "", []
+
+    return (
+        "AND agent = @app_name",
+        [bigquery.ScalarQueryParameter("app_name", "STRING", app_name)],
+    )
+
+  def _vector_app_name_filter_sql(self, app_name: Optional[str]) -> tuple[str, list]:
+    """Restricts vector search to sessions owned by the requesting app."""
+    if not app_name:
+      return "", []
+
+    return (
+        """
+    AND base.session_id IN (
+      SELECT DISTINCT session_id
+      FROM `{project}.{dataset}.{table}`
+      WHERE user_id = @user_id
+        AND agent = @app_name
+    )""".format(
+            project=self.project_id,
+            dataset=self.dataset_id,
+            table=self.table_id,
+        ),
+        [bigquery.ScalarQueryParameter("app_name", "STRING", app_name)],
+    )
+
   async def retrieve_similar_episodes(
       self,
       query: str,
       user_id: str,
       top_k: int = 5,
       since_days: int = 30,
+      app_name: Optional[str] = None,
   ) -> list[Episode]:
     """Finds past interactions similar to current query.
 
@@ -340,6 +373,7 @@ class BigQueryEpisodicMemory:
         user_id: The user identifier.
         top_k: Number of similar episodes to return.
         since_days: Only consider episodes from the last N days.
+        app_name: Optional ADK app name to scope results to one agent.
 
     Returns:
         List of Episode objects ranked by similarity.
@@ -349,7 +383,7 @@ class BigQueryEpisodicMemory:
     # Try vector search first if embeddings table exists
     try:
       return await self._vector_similarity_search(
-          query, user_id, top_k, since_timestamp
+          query, user_id, top_k, since_timestamp, app_name=app_name
       )
     except Exception as e:
       logger.debug(
@@ -357,7 +391,9 @@ class BigQueryEpisodicMemory:
       )
 
     # Fallback to simple keyword matching
-    return await self._keyword_search(query, user_id, top_k, since_timestamp)
+    return await self._keyword_search(
+        query, user_id, top_k, since_timestamp, app_name=app_name
+    )
 
   async def _vector_similarity_search(
       self,
@@ -365,6 +401,7 @@ class BigQueryEpisodicMemory:
       user_id: str,
       top_k: int,
       since_timestamp: datetime,
+      app_name: Optional[str] = None,
   ) -> list[Episode]:
     """Performs vector similarity search using BigQuery ML."""
     # Generate embedding for query
@@ -372,10 +409,14 @@ class BigQueryEpisodicMemory:
     if query_embedding is None:
       raise ValueError("Could not generate query embedding")
 
+    app_name_filter, app_name_params = self._vector_app_name_filter_sql(
+        app_name
+    )
     sql = self._VECTOR_SEARCH_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
         embeddings_table=self.embeddings_table_id,
+        app_name_filter=app_name_filter,
     )
 
     job_config = bigquery.QueryJobConfig(
@@ -385,6 +426,7 @@ class BigQueryEpisodicMemory:
                 "query_embedding", "FLOAT64", query_embedding
             ),
             bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
+            *app_name_params,
         ]
     )
 
@@ -428,12 +470,15 @@ class BigQueryEpisodicMemory:
       user_id: str,
       top_k: int,
       since_timestamp: datetime,
+      app_name: Optional[str] = None,
   ) -> list[Episode]:
     """Performs simple keyword-based search."""
+    app_name_filter, app_name_params = self._app_name_filter_sql(app_name)
     sql = self._SIMILARITY_SEARCH_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,
+        app_name_filter=app_name_filter,
     )
 
     job_config = bigquery.QueryJobConfig(
@@ -443,6 +488,7 @@ class BigQueryEpisodicMemory:
                 "since_timestamp", "TIMESTAMP", since_timestamp
             ),
             bigquery.ScalarQueryParameter("limit", "INT64", top_k * 10),
+            *app_name_params,
         ]
     )
 
@@ -964,11 +1010,12 @@ class BigQueryMemoryService(BaseMemoryService):
     Returns:
         SearchMemoryResponse with matching memories.
     """
-    # Retrieve similar episodes
+    # Retrieve similar episodes scoped to the requesting app.
     episodes = await self.episodic_memory.retrieve_similar_episodes(
         query=query,
         user_id=user_id,
         top_k=10,
+        app_name=app_name,
     )
 
     # Apply context management
