@@ -417,8 +417,8 @@ class TestContextGraphManager:
 
     result = mgr.create_cross_links(["sess-1"])
     assert result is True
-    # create table + delete old links + insert new links
-    assert mock_client.query.call_count == 3
+    # create table + atomic MERGE upsert
+    assert mock_client.query.call_count == 2
 
   def test_create_cross_links_failure(self):
     mock_client = MagicMock()
@@ -643,7 +643,7 @@ class TestContextGraphManager:
 
   def test_create_cross_links_fails_on_real_delete_error(self):
     mock_client = MagicMock()
-    # First call (create table) succeeds, second (delete) fails
+    # First call (create table) succeeds, second (MERGE) fails
     mock_job_ok = MagicMock()
     mock_job_ok.result.return_value = None
     call_count = {"n": 0}
@@ -660,19 +660,28 @@ class TestContextGraphManager:
     result = mgr.create_cross_links(["sess-1"])
     assert result is False
 
+  def test_create_cross_links_merge_failure_skips_pre_delete(self):
+    mock_client = MagicMock()
+    mock_job_ok = MagicMock()
+    mock_job_ok.result.return_value = None
+    mock_client.query.side_effect = [
+        mock_job_ok,
+        Exception("insert failed"),
+    ]
+    mgr = self._make_manager(mock_client)
+
+    result = mgr.create_cross_links(["sess-1"])
+
+    assert result is False
+    queries = [call.args[0] for call in mock_client.query.call_args_list]
+    assert not any("DELETE FROM" in query for query in queries)
+    assert any("MERGE" in query for query in queries)
+
   def test_create_cross_links_ignores_not_found_delete(self):
     mock_client = MagicMock()
     mock_job_ok = MagicMock()
     mock_job_ok.result.return_value = None
-    call_count = {"n": 0}
-
-    def side_effect(*args, **kwargs):
-      call_count["n"] += 1
-      if call_count["n"] == 2:
-        raise Exception("Table not found: cross_links")
-      return mock_job_ok
-
-    mock_client.query.side_effect = side_effect
+    mock_client.query.return_value = mock_job_ok
     mgr = self._make_manager(mock_client)
 
     result = mgr.create_cross_links(["sess-1"])

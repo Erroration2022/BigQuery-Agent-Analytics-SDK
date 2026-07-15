@@ -440,6 +440,57 @@ FROM `{project}.{dataset}.{biz_table}` b
 WHERE b.session_id IN UNNEST(@session_ids)
 """
 
+_MERGE_CROSS_LINKS_QUERY = """\
+MERGE `{project}.{dataset}.{cross_links_table}` AS target
+USING (
+  SELECT
+    b.biz_node_id AS link_id,
+    b.span_id,
+    b.session_id,
+    b.biz_node_id,
+    b.node_value,
+    'EVALUATED' AS link_type,
+    b.artifact_uri,
+    CURRENT_TIMESTAMP() AS created_at
+  FROM `{project}.{dataset}.{biz_table}` b
+  WHERE b.session_id IN UNNEST(@session_ids)
+) AS source
+ON target.link_id = source.link_id
+WHEN MATCHED THEN
+  UPDATE SET
+    span_id = source.span_id,
+    session_id = source.session_id,
+    biz_node_id = source.biz_node_id,
+    node_value = source.node_value,
+    link_type = source.link_type,
+    artifact_uri = source.artifact_uri,
+    created_at = source.created_at
+WHEN NOT MATCHED BY TARGET THEN
+  INSERT (
+    link_id,
+    span_id,
+    session_id,
+    biz_node_id,
+    node_value,
+    link_type,
+    artifact_uri,
+    created_at
+  )
+  VALUES (
+    source.link_id,
+    source.span_id,
+    source.session_id,
+    source.biz_node_id,
+    source.node_value,
+    source.link_type,
+    source.artifact_uri,
+    source.created_at
+  )
+WHEN NOT MATCHED BY SOURCE
+  AND target.session_id IN UNNEST(@session_ids) THEN
+  DELETE
+"""
+
 _CREATE_DECISION_POINTS_TABLE_QUERY = """\
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.{decision_points_table}` (
   decision_id STRING,
@@ -1254,24 +1305,9 @@ class ContextGraphManager:
         ]
     )
 
-    # Delete existing cross-links for these sessions (idempotent)
-    try:
-      delete_query = _DELETE_CROSS_LINKS_FOR_SESSIONS_QUERY.format(
-          project=self.project_id,
-          dataset=self.dataset_id,
-          cross_links_table=self.config.cross_links_table,
-      )
-      job = self.client.query(delete_query, job_config=job_config)
-      job.result()
-    except Exception as e:
-      err_msg = str(e).lower()
-      if "not found" in err_msg or "does not exist" in err_msg:
-        logger.debug("Cross-links table does not exist yet: %s", e)
-      else:
-        logger.warning("Cross-links delete failed: %s", e)
-        return False
-
-    insert_query = _INSERT_CROSS_LINKS_QUERY.format(
+    # Atomic upsert + stale-row cleanup avoids delete-then-insert data loss
+    # when the write fails after rows were already removed.
+    merge_query = _MERGE_CROSS_LINKS_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
         biz_table=self.config.biz_nodes_table,
@@ -1279,7 +1315,7 @@ class ContextGraphManager:
     )
 
     try:
-      job = self.client.query(insert_query, job_config=job_config)
+      job = self.client.query(merge_query, job_config=job_config)
       job.result()
       logger.info("Cross-links created for %d sessions", len(session_ids))
       return True
