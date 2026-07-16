@@ -618,6 +618,11 @@ class TestContextGraphManager:
 
     assert "WHEN NOT MATCHED BY SOURCE" in _EXTRACT_BIZ_NODES_QUERY
     assert "DELETE" in _EXTRACT_BIZ_NODES_QUERY
+    # Only delete stale rows for sessions with non-empty extraction.
+    assert (
+        "target.session_id IN (SELECT DISTINCT session_id FROM source)"
+        in _EXTRACT_BIZ_NODES_QUERY
+    )
 
   def test_store_biz_nodes_persists_artifact_uri(self):
     mock_client = MagicMock()
@@ -876,8 +881,8 @@ class TestDecisionSemantics:
 
     result = mgr.create_decision_edges(["sess-1"])
     assert result is True
-    # 4 table creates + 2 deletes + 2 inserts = 8
-    assert mock_client.query.call_count == 8
+    # 4 table creates + 2 MERGE upserts = 6
+    assert mock_client.query.call_count == 6
 
   def test_create_decision_edges_failure(self):
     mock_client = MagicMock()
