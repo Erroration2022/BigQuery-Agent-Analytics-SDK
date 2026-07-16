@@ -359,7 +359,7 @@ WHEN NOT MATCHED BY TARGET THEN
           source.node_type, source.node_value, source.confidence,
           source.artifact_uri)
 WHEN NOT MATCHED BY SOURCE
-  AND target.session_id IN UNNEST(@session_ids) THEN
+  AND target.session_id IN (SELECT DISTINCT session_id FROM source) THEN
   DELETE
 """
 
@@ -588,6 +588,31 @@ FROM `{project}.{dataset}.{decision_points_table}` dp
 WHERE dp.session_id IN UNNEST(@session_ids)
 """
 
+_MERGE_MADE_DECISION_EDGES_QUERY = """\
+MERGE `{project}.{dataset}.{made_decision_edges_table}` AS target
+USING (
+  SELECT
+    CONCAT(dp.span_id, ':MADE_DECISION:', dp.decision_id) AS edge_id,
+    dp.span_id,
+    dp.decision_id,
+    CURRENT_TIMESTAMP() AS created_at
+  FROM `{project}.{dataset}.{decision_points_table}` dp
+  WHERE dp.session_id IN UNNEST(@session_ids)
+) AS source
+ON target.edge_id = source.edge_id
+WHEN MATCHED THEN
+  UPDATE SET
+    span_id = source.span_id,
+    decision_id = source.decision_id,
+    created_at = source.created_at
+WHEN NOT MATCHED BY TARGET THEN
+  INSERT (edge_id, span_id, decision_id, created_at)
+  VALUES (source.edge_id, source.span_id, source.decision_id, source.created_at)
+WHEN NOT MATCHED BY SOURCE
+  AND target.decision_id IN (SELECT DISTINCT decision_id FROM source) THEN
+  DELETE
+"""
+
 _INSERT_CANDIDATE_EDGES_QUERY = """\
 INSERT INTO `{project}.{dataset}.{candidate_edges_table}`
   (edge_id, decision_id, candidate_id, edge_type,
@@ -604,6 +629,52 @@ SELECT
   CURRENT_TIMESTAMP() AS created_at
 FROM `{project}.{dataset}.{candidates_table}` c
 WHERE c.session_id IN UNNEST(@session_ids)
+"""
+
+_MERGE_CANDIDATE_EDGES_QUERY = """\
+MERGE `{project}.{dataset}.{candidate_edges_table}` AS target
+USING (
+  SELECT
+    CONCAT(c.decision_id, ':', c.status, ':', c.candidate_id) AS edge_id,
+    c.decision_id,
+    c.candidate_id,
+    CASE c.status
+      WHEN 'SELECTED' THEN 'SELECTED_CANDIDATE'
+      ELSE 'DROPPED_CANDIDATE'
+    END AS edge_type,
+    c.rejection_rationale,
+    CURRENT_TIMESTAMP() AS created_at
+  FROM `{project}.{dataset}.{candidates_table}` c
+  WHERE c.session_id IN UNNEST(@session_ids)
+) AS source
+ON target.edge_id = source.edge_id
+WHEN MATCHED THEN
+  UPDATE SET
+    decision_id = source.decision_id,
+    candidate_id = source.candidate_id,
+    edge_type = source.edge_type,
+    rejection_rationale = source.rejection_rationale,
+    created_at = source.created_at
+WHEN NOT MATCHED BY TARGET THEN
+  INSERT (
+    edge_id,
+    decision_id,
+    candidate_id,
+    edge_type,
+    rejection_rationale,
+    created_at
+  )
+  VALUES (
+    source.edge_id,
+    source.decision_id,
+    source.candidate_id,
+    source.edge_type,
+    source.rejection_rationale,
+    source.created_at
+  )
+WHEN NOT MATCHED BY SOURCE
+  AND target.decision_id IN (SELECT DISTINCT decision_id FROM source) THEN
+  DELETE
 """
 
 _DECISION_POINTS_FOR_SESSION_QUERY = """\
@@ -2163,41 +2234,22 @@ class ContextGraphManager:
         "candidate_edges_table": self.config.candidate_edges_table,
     }
 
-    # Delete existing edges (idempotent)
-    for del_tmpl in (
-        _DELETE_MADE_DECISION_EDGES_FOR_SESSIONS_QUERY,
-        _DELETE_CANDIDATE_EDGES_FOR_SESSIONS_QUERY,
+    # Atomic MERGE upserts avoid delete-then-insert data loss when a
+    # write fails after rows were already removed.
+    for merge_tmpl in (
+        _MERGE_MADE_DECISION_EDGES_QUERY,
+        _MERGE_CANDIDATE_EDGES_QUERY,
     ):
       try:
-        job = self.client.query(del_tmpl.format(**fmt), job_config=job_config)
+        job = self.client.query(merge_tmpl.format(**fmt), job_config=job_config)
         job.result()
       except Exception as e:
         err_msg = str(e).lower()
-        if "not found" not in err_msg and "does not exist" not in err_msg:
-          logger.warning("Edge delete failed: %s", e)
+        if "not found" in err_msg or "does not exist" in err_msg:
+          logger.debug("Decision edge table does not exist yet: %s", e)
           return False
-
-    # Insert MadeDecision edges
-    try:
-      job = self.client.query(
-          _INSERT_MADE_DECISION_EDGES_QUERY.format(**fmt),
-          job_config=job_config,
-      )
-      job.result()
-    except Exception as e:
-      logger.warning("Failed to insert MadeDecision edges: %s", e)
-      return False
-
-    # Insert CandidateEdge edges
-    try:
-      job = self.client.query(
-          _INSERT_CANDIDATE_EDGES_QUERY.format(**fmt),
-          job_config=job_config,
-      )
-      job.result()
-    except Exception as e:
-      logger.warning("Failed to insert CandidateEdge edges: %s", e)
-      return False
+        logger.warning("Failed to merge decision edges: %s", e)
+        return False
 
     logger.info("Decision edges created for %d sessions", len(session_ids))
     return True
