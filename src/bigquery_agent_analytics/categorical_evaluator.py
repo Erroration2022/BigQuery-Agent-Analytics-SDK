@@ -293,6 +293,14 @@ def _escape_sql_string_literal(value: str) -> str:
   return value.replace("'", "''")
 
 
+def build_connection_clause(connection_id: Optional[str] = None) -> str:
+  """Build optional ``connection_id`` clause for AI.GENERATE SQL."""
+  if not connection_id:
+    return ""
+  escaped = _escape_sql_string_literal(connection_id)
+  return f"\n    connection_id => '{escaped}',"
+
+
 # ------------------------------------------------------------------ #
 # AI.CLASSIFY Query Builder                                            #
 # ------------------------------------------------------------------ #
@@ -426,10 +434,7 @@ def build_ai_generate_query(
   Returns:
       Complete SQL query string.
   """
-  connection_clause = ""
-  if connection_id:
-    escaped = _escape_sql_string_literal(connection_id)
-    connection_clause = f"\n    connection_id => '{escaped}',"
+  connection_clause = build_connection_clause(connection_id)
 
   return f"""\
 WITH session_transcripts AS (
