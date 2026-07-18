@@ -317,6 +317,9 @@ class TestAIGenerateJudgeBatchQuery:
   def test_contains_endpoint_placeholder(self):
     assert "{endpoint}" in AI_GENERATE_JUDGE_BATCH_QUERY
 
+  def test_contains_connection_clause_placeholder(self):
+    assert "{connection_clause}" in AI_GENERATE_JUDGE_BATCH_QUERY
+
   def test_contains_score_and_justification(self):
     assert "score INT64" in AI_GENERATE_JUDGE_BATCH_QUERY
     assert "justification STRING" in AI_GENERATE_JUDGE_BATCH_QUERY

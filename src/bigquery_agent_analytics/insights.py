@@ -474,7 +474,7 @@ SELECT
   result.*
 FROM transcripts,
 AI.GENERATE(
-  prompt => CONCAT(@facet_prompt, '\\n\\nTranscript:\\n', transcript),
+  prompt => CONCAT(@facet_prompt, '\\n\\nTranscript:\\n', transcript),{connection_clause}
   endpoint => '{endpoint}',
   model_params => JSON '{{"temperature": 0.1, "max_output_tokens": 1024}}',
   output_schema => CONCAT(
@@ -495,7 +495,7 @@ _AI_GENERATE_ANALYSIS_QUERY = """\
 SELECT
   result.*
 FROM AI.GENERATE(
-  prompt => @analysis_prompt,
+  prompt => @analysis_prompt,{connection_clause}
   endpoint => '{endpoint}',
   model_params => JSON '{{"temperature": 0.3, "max_output_tokens": 2048}}'
 ) AS result

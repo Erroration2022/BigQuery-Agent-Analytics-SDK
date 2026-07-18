@@ -846,6 +846,9 @@ class TestAIGenerateTemplates:
   def test_facet_query_contains_endpoint(self):
     assert "{endpoint}" in _AI_GENERATE_FACET_EXTRACTION_QUERY
 
+  def test_facet_query_contains_connection_clause(self):
+    assert "{connection_clause}" in _AI_GENERATE_FACET_EXTRACTION_QUERY
+
   def test_analysis_query_contains_ai_generate(self):
     assert "AI.GENERATE" in _AI_GENERATE_ANALYSIS_QUERY
 

@@ -442,6 +442,36 @@ class TestAIGenerateJudge:
     assert report.session_scores[0].passed is True
     assert report.session_scores[1].passed is False
 
+  def test_ai_generate_judge_uses_connection_id(self):
+    mock_bq = _mock_bq_client()
+    mock_job = MagicMock()
+    mock_job.result.return_value = []
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+        connection_id="proj.us.conn",
+    )
+
+    from bigquery_agent_analytics.evaluators import LLMAsJudge
+
+    evaluator = LLMAsJudge.correctness()
+    criterion = evaluator._criteria[0]
+
+    client._ai_generate_judge(
+        evaluator,
+        criterion,
+        "agent_events_v2",
+        "TRUE",
+        [],
+    )
+
+    sql = mock_bq.query.call_args[0][0]
+    assert "connection_id => 'proj.us.conn'" in sql
+
   def test_fallback_chain_tries_ai_generate_first(self):
     """Verify _evaluate_llm_judge tries AI.GENERATE first."""
     mock_bq = _mock_bq_client()

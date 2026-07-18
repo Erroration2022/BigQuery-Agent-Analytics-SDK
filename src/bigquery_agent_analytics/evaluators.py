@@ -759,7 +759,7 @@ AI.GENERATE(
   prompt => CONCAT(
     @judge_prompt, '\\nTrace:\\n', trace_text,
     '\\nResponse:\\n', COALESCE(final_response, 'N/A')
-  ),
+  ),{connection_clause}
   endpoint => '{endpoint}',
   model_params => JSON '{{"temperature": 0.1, "max_output_tokens": 500}}',
   output_schema => 'score INT64, justification STRING'

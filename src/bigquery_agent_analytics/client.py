@@ -57,6 +57,7 @@ from .categorical_evaluator import build_ai_classify_query
 from .categorical_evaluator import build_ai_generate_query
 from .categorical_evaluator import build_categorical_prompt
 from .categorical_evaluator import build_categorical_report
+from .categorical_evaluator import build_connection_clause
 from .categorical_evaluator import CATEGORICAL_AI_GENERATE_QUERY
 from .categorical_evaluator import CATEGORICAL_RESULTS_DDL
 from .categorical_evaluator import CATEGORICAL_TRANSCRIPT_QUERY
@@ -1008,6 +1009,7 @@ class Client:
         table=table,
         where=where,
         endpoint=self.endpoint,
+        connection_clause=build_connection_clause(self.connection_id),
     )
     job_config = bq.QueryJobConfig(
         query_parameters=judge_params,
@@ -1787,6 +1789,7 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         endpoint=self.endpoint,
+        connection_clause=build_connection_clause(self.connection_id),
     )
     job_config = bq.QueryJobConfig(
         query_parameters=[
