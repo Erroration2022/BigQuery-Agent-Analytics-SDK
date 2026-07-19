@@ -981,6 +981,34 @@ class TestBuildClassifyCategoriesLiteral:
     assert "it''s good" in result
     assert "User''s satisfied." in result
 
+  def test_rejects_sql_structure_injection(self):
+    metric = CategoricalMetricDefinition(
+        name="tone",
+        definition="Tone.",
+        categories=[
+            CategoricalMetricCategory(
+                name="'), 1=1, ('",
+                definition="injected",
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="cannot be safely embedded"):
+      build_classify_categories_literal(metric)
+
+  def test_rejects_tuple_breakout(self):
+    metric = CategoricalMetricDefinition(
+        name="tone",
+        definition="Tone.",
+        categories=[
+            CategoricalMetricCategory(
+                name="x'), ('injected', 'z",
+                definition="def",
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="cannot be safely embedded"):
+      build_classify_categories_literal(metric)
+
   def test_empty_categories(self):
     metric = CategoricalMetricDefinition(
         name="tone",

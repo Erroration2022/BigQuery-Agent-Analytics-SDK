@@ -134,14 +134,17 @@ class BigFramesEvaluator:
     df = bpd.read_gbq(query)
     df["prompt"] = prompt_prefix + df["trace_text"]
 
-    result = bbq.ai.generate(
-        df["prompt"],
-        endpoint=self.endpoint,
-        output_schema={
+    generate_kwargs: dict[str, object] = {
+        "endpoint": self.endpoint,
+        "output_schema": {
             "score": "INT64",
             "justification": "STRING",
         },
-    )
+    }
+    if self.connection_id:
+      generate_kwargs["connection_id"] = self.connection_id
+
+    result = bbq.ai.generate(df["prompt"], **generate_kwargs)
 
     result["session_id"] = df["session_id"]
     return result[["session_id", "score", "justification"]]
@@ -205,10 +208,9 @@ class BigFramesEvaluator:
     df = bpd.read_gbq(query)
     df["prompt"] = _FACET_PROMPT + df["transcript"]
 
-    result = bbq.ai.generate(
-        df["prompt"],
-        endpoint=self.endpoint,
-        output_schema={
+    generate_kwargs: dict[str, object] = {
+        "endpoint": self.endpoint,
+        "output_schema": {
             "goal_categories": "ARRAY<STRING>",
             "outcome": "STRING",
             "satisfaction": "STRING",
@@ -219,7 +221,11 @@ class BigFramesEvaluator:
             "key_topics": "ARRAY<STRING>",
             "summary": "STRING",
         },
-    )
+    }
+    if self.connection_id:
+      generate_kwargs["connection_id"] = self.connection_id
+
+    result = bbq.ai.generate(df["prompt"], **generate_kwargs)
 
     result["session_id"] = df["session_id"]
     return result

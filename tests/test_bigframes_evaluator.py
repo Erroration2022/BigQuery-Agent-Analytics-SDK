@@ -123,6 +123,36 @@ class TestBigFramesEvaluatorEvaluate:
       assert "score" in schema
       assert "justification" in schema
 
+  def test_evaluate_sessions_passes_connection_id(self):
+    """connection_id should be forwarded to bbq.ai.generate."""
+    modules, mock_bpd, mock_bbq = _install_mock_bigframes()
+
+    mock_df = MagicMock()
+    mock_df.__getitem__ = MagicMock(return_value=MagicMock())
+    mock_df.__setitem__ = MagicMock()
+
+    mock_result = MagicMock()
+    mock_result.__getitem__ = MagicMock(
+        return_value=mock_result,
+    )
+    mock_result.__setitem__ = MagicMock()
+
+    mock_bpd.read_gbq = MagicMock(return_value=mock_df)
+    mock_bbq.ai.generate = MagicMock(
+        return_value=mock_result,
+    )
+
+    with patch.dict(sys.modules, modules):
+      ev = BigFramesEvaluator(
+          project_id="proj",
+          dataset_id="ds",
+          connection_id="proj.us.conn",
+      )
+      ev.evaluate_sessions(max_sessions=10)
+
+      gen_kwargs = mock_bbq.ai.generate.call_args.kwargs
+      assert gen_kwargs["connection_id"] == "proj.us.conn"
+
 
 class TestBigFramesEvaluatorFacets:
   """Tests for BigFramesEvaluator.extract_facets()."""
@@ -162,6 +192,36 @@ class TestBigFramesEvaluatorFacets:
       assert "goal_categories" in schema
       assert "outcome" in schema
       assert "satisfaction" in schema
+
+  def test_extract_facets_passes_connection_id(self):
+    """connection_id should be forwarded to bbq.ai.generate."""
+    modules, mock_bpd, mock_bbq = _install_mock_bigframes()
+
+    mock_df = MagicMock()
+    mock_df.__getitem__ = MagicMock(return_value=MagicMock())
+    mock_df.__setitem__ = MagicMock()
+
+    mock_result = MagicMock()
+    mock_result.__getitem__ = MagicMock(
+        return_value=mock_result,
+    )
+    mock_result.__setitem__ = MagicMock()
+
+    mock_bpd.read_gbq = MagicMock(return_value=mock_df)
+    mock_bbq.ai.generate = MagicMock(
+        return_value=mock_result,
+    )
+
+    with patch.dict(sys.modules, modules):
+      ev = BigFramesEvaluator(
+          project_id="proj",
+          dataset_id="ds",
+          connection_id="proj.us.conn",
+      )
+      ev.extract_facets(session_ids=["s1"])
+
+      gen_kwargs = mock_bbq.ai.generate.call_args.kwargs
+      assert gen_kwargs["connection_id"] == "proj.us.conn"
 
   def test_extract_facets_no_session_ids(self):
     """Test extract_facets without specific session IDs."""
