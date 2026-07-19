@@ -61,6 +61,7 @@ from datetime import datetime
 from datetime import timezone
 import json
 import logging
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -293,6 +294,22 @@ def _escape_sql_string_literal(value: str) -> str:
   return value.replace("'", "''")
 
 
+# Parentheses break tuple literals; a quote followed by comma/paren can
+# terminate the SQL string early even after doubling interior apostrophes.
+_UNSAFE_EMBEDDED_CATEGORY_TEXT = re.compile(
+    r"[()]|'\s*[,)]",
+)
+
+
+def _validate_category_embed_text(value: str, *, field: str) -> None:
+  """Reject category text that cannot be safely embedded in SQL literals."""
+  if _UNSAFE_EMBEDDED_CATEGORY_TEXT.search(value):
+    raise ValueError(
+        f"Category {field} contains characters that cannot be safely "
+        f"embedded in SQL literals: {value!r}"
+    )
+
+
 # ------------------------------------------------------------------ #
 # AI.CLASSIFY Query Builder                                            #
 # ------------------------------------------------------------------ #
@@ -308,6 +325,8 @@ def build_classify_categories_literal(
   """
   pairs = []
   for cat in metric.categories:
+    _validate_category_embed_text(cat.name, field="name")
+    _validate_category_embed_text(cat.definition, field="definition")
     name = _escape_sql_string_literal(cat.name)
     defn = _escape_sql_string_literal(cat.definition)
     pairs.append(f"('{name}', '{defn}')")
