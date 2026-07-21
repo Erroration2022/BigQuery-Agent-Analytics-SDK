@@ -41,6 +41,8 @@ from typing import Optional
 
 from google.cloud import bigquery
 
+from ._sql_validation import validate_table_id
+from ._sql_validation import validate_view_prefix
 from .categorical_evaluator import DEFAULT_RESULTS_TABLE
 
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
@@ -140,8 +142,11 @@ class CategoricalViewManager:
   ) -> None:
     self.project_id = project_id
     self.dataset_id = dataset_id
-    self.results_table = results_table
-    self.view_prefix = view_prefix
+    self.results_table = validate_table_id(
+        results_table,
+        param_name="results_table",
+    )
+    self.view_prefix = validate_view_prefix(view_prefix)
     self.location = location
     self._bq_client = bq_client
 

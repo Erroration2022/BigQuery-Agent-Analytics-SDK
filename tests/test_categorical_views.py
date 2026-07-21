@@ -207,3 +207,23 @@ class TestCategoricalViewManager:
       mock_bq_cls.return_value = mock.MagicMock()
       _ = vm.bq_client
       mock_bq_cls.assert_called_once_with(project=PROJECT)
+
+
+class TestCategoricalViewIdentifierValidation:
+  """Reject SQL injection via view_prefix and results_table."""
+
+  def test_rejects_sql_injection_in_results_table(self):
+    with pytest.raises(ValueError, match="Invalid results_table"):
+      CategoricalViewManager(
+          project_id=PROJECT,
+          dataset_id=DATASET,
+          results_table="x` UNION ALL SELECT secret FROM secrets --",
+      )
+
+  def test_rejects_sql_injection_in_view_prefix(self):
+    with pytest.raises(ValueError, match="Invalid view_prefix"):
+      CategoricalViewManager(
+          project_id=PROJECT,
+          dataset_id=DATASET,
+          view_prefix="x` AS SELECT secret FROM secrets --",
+      )

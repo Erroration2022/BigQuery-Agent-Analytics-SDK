@@ -1408,6 +1408,20 @@ class TestEvaluateCategoricalPersistence:
     assert report.details["persisted"] is True
     assert report.details["persisted_rows"] == 1
 
+  def test_persist_rejects_sql_injection_in_results_table(self):
+    """results_table must not break out of backtick-quoted DDL identifiers."""
+    client, mock_bq = self._make_client_with_results()
+    config = _make_categorical_config(
+        persist_results=True,
+        results_table="x` UNION ALL SELECT secret FROM secrets --",
+    )
+    report = client.evaluate_categorical(config=config)
+
+    assert mock_bq.query.call_count == 1
+    mock_bq.insert_rows_json.assert_not_called()
+    assert report.details["persisted"] is False
+    assert "Invalid results_table" in report.details["persist_error"]
+
   def test_persist_uses_default_table_name(self):
     """When results_table is None, uses the default table name."""
     client, mock_bq = self._make_client_with_results()
