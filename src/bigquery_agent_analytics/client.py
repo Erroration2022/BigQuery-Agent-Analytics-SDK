@@ -53,6 +53,7 @@ from typing import Any, Optional
 
 from google.cloud import bigquery
 
+from ._sql_validation import validate_table_id
 from .categorical_evaluator import build_ai_classify_query
 from .categorical_evaluator import build_ai_generate_query
 from .categorical_evaluator import build_categorical_prompt
@@ -1439,9 +1440,11 @@ class Client:
       report.details["persist_note"] = "no sessions to persist"
       return
 
-    results_table = config.results_table or DEFAULT_RESULTS_TABLE
-
     try:
+      results_table = validate_table_id(
+          config.results_table or DEFAULT_RESULTS_TABLE,
+          param_name="results_table",
+      )
       ddl = CATEGORICAL_RESULTS_DDL.format(
           project=self.project_id,
           dataset=self.dataset_id,
