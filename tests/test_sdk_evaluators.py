@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
+from bigquery_agent_analytics.evaluators import _build_batch_judge_prompt
 from bigquery_agent_analytics.evaluators import _parse_json_from_text
 from bigquery_agent_analytics.evaluators import AI_GENERATE_JUDGE_BATCH_QUERY
 from bigquery_agent_analytics.evaluators import CodeEvaluator
@@ -232,6 +233,28 @@ class TestLLMAsJudgePrebuilt:
         .add_criterion("b", "p2 {trace_text} {final_response}", "b")
     )
     assert len(judge._criteria) == 2
+
+
+class TestBuildBatchJudgePrompt:
+  """Tests for batch judge prompt construction."""
+
+  def test_includes_instructions_after_placeholders(self):
+    judge = LLMAsJudge.correctness()
+    prompt = _build_batch_judge_prompt(judge._criteria[0].prompt_template)
+    assert "## Instructions" in prompt
+    assert "correctness" in prompt.lower()
+    assert "{trace_text}" not in prompt
+    assert "{final_response}" not in prompt
+
+  def test_custom_template_keeps_rubric_text(self):
+    template = (
+        "Intro\\n{trace_text}\\nMiddle\\n{final_response}\\n"
+        "Score helpfulness from 1-10."
+    )
+    prompt = _build_batch_judge_prompt(template)
+    assert "Intro" in prompt
+    assert "Middle" in prompt
+    assert "Score helpfulness from 1-10." in prompt
 
 
 class TestEvaluationReport:

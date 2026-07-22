@@ -68,6 +68,7 @@ from .categorical_evaluator import flatten_results_to_rows
 from .categorical_evaluator import parse_categorical_row
 from .categorical_evaluator import parse_classify_row
 from .evaluators import _parse_json_from_text
+from .evaluators import _build_batch_judge_prompt
 from .evaluators import AI_GENERATE_JUDGE_BATCH_QUERY
 from .evaluators import CodeEvaluator
 from .evaluators import DEFAULT_ENDPOINT
@@ -998,7 +999,7 @@ class Client:
         bq.ScalarQueryParameter(
             "judge_prompt",
             "STRING",
-            criterion.prompt_template.split("{trace_text}")[0],
+            _build_batch_judge_prompt(criterion.prompt_template),
         ),
     ]
 
@@ -1062,7 +1063,7 @@ class Client:
         bq.ScalarQueryParameter(
             "judge_prompt",
             "STRING",
-            criterion.prompt_template.split("{trace_text}")[0],
+            _build_batch_judge_prompt(criterion.prompt_template),
         ),
     ]
 

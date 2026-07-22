@@ -442,6 +442,51 @@ class TestAIGenerateJudge:
     assert report.session_scores[0].passed is True
     assert report.session_scores[1].passed is False
 
+  def test_ai_generate_judge_includes_full_rubric(self):
+    """Batch judge SQL must receive criterion instructions, not just the intro."""
+    mock_bq = _mock_bq_client()
+    mock_rows = [
+        _make_mock_row(
+            {
+                "session_id": "s1",
+                "trace_text": "USER: hi",
+                "final_response": "hello",
+                "score": 8,
+                "justification": "Good response",
+            }
+        ),
+    ]
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_rows
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+    )
+
+    from bigquery_agent_analytics.evaluators import LLMAsJudge
+
+    evaluator = LLMAsJudge.correctness(threshold=0.5)
+    criterion = evaluator._criteria[0]
+
+    client._ai_generate_judge(
+        evaluator,
+        criterion,
+        "agent_events_v2",
+        "TRUE",
+        [],
+    )
+
+    job_config = mock_bq.query.call_args.kwargs["job_config"]
+    judge_prompt = next(
+        p for p in job_config.query_parameters if p.name == "judge_prompt"
+    ).value
+    assert "## Instructions" in judge_prompt
+    assert "correctness" in judge_prompt.lower()
+
   def test_fallback_chain_tries_ai_generate_first(self):
     """Verify _evaluate_llm_judge tries AI.GENERATE first."""
     mock_bq = _mock_bq_client()

@@ -818,6 +818,20 @@ LLM_JUDGE_BATCH_QUERY = _LEGACY_LLM_JUDGE_BATCH_QUERY
 # ------------------------------------------------------------------ #
 
 
+def _build_batch_judge_prompt(prompt_template: str) -> str:
+  """Builds the judge rubric for batch SQL that injects trace/response separately.
+
+  Batch judge queries concatenate ``@judge_prompt`` with trace and response
+  columns. The template placeholders ``{trace_text}`` and ``{final_response}``
+  must be removed, but the criterion instructions after them must be kept.
+  """
+  return (
+      prompt_template.replace("{trace_text}", "").replace(
+          "{final_response}", ""
+      ).strip()
+  )
+
+
 def _parse_json_from_text(text: str) -> Optional[dict[str, Any]]:
   """Extracts and parses JSON from LLM response text."""
   if not text:
