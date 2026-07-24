@@ -40,6 +40,8 @@ from typing import Any, Optional
 from pydantic import BaseModel
 from pydantic import Field
 
+from bigquery_agent_analytics.ai_ml_integration import _build_connection_clause
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
@@ -114,7 +116,7 @@ WITH golden AS (
   SELECT
     question,
     AI.EMBED(
-      question,
+      question,{golden_connection_clause}
       endpoint => '{endpoint}'
     ).result AS embedding
   FROM `{project}.{dataset}.{golden_table}`
@@ -124,7 +126,7 @@ production AS (
     session_id,
     JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question,
     AI.EMBED(
-      JSON_EXTRACT_SCALAR(content, '$.text_summary'),
+      JSON_EXTRACT_SCALAR(content, '$.text_summary'),{production_connection_clause}
       endpoint => '{endpoint}'
     ).result AS embedding
   FROM `{project}.{dataset}.{table}`
@@ -408,6 +410,7 @@ async def compute_drift(
     where_clause: str,
     query_params: list,
     embedding_model: Optional[str] = None,
+    connection_id: Optional[str] = None,
 ) -> DriftReport:
   """Computes drift between golden dataset and production.
 
@@ -420,6 +423,8 @@ async def compute_drift(
       where_clause: SQL WHERE clause for filtering.
       query_params: BigQuery query parameters.
       embedding_model: Optional model for semantic comparison.
+      connection_id: Optional BigQuery connection resource ID for
+          ``AI.EMBED`` semantic drift.
 
   Returns:
       DriftReport with coverage metrics.
@@ -482,6 +487,7 @@ async def compute_drift(
           embedding_model=embedding_model,
           golden_questions=golden_questions,
           prod_questions=prod_questions,
+          connection_id=connection_id,
       )
     except Exception as e:
       logger.warning(
@@ -534,6 +540,7 @@ async def _semantic_drift(
     golden_questions: list[str],
     prod_questions: list[str],
     similarity_threshold: float = 0.3,
+    connection_id: Optional[str] = None,
 ) -> DriftReport:
   """Computes semantic drift using embedding cosine distance.
 
@@ -560,6 +567,8 @@ async def _semantic_drift(
       prod_questions: Pre-loaded production questions.
       similarity_threshold: Cosine distance threshold below which a
           golden question is considered "covered". Default 0.3.
+      connection_id: Optional BigQuery connection resource ID for
+          ``AI.EMBED``.
 
   Returns:
       DriftReport with semantic coverage metrics.
@@ -578,6 +587,7 @@ async def _semantic_drift(
         where=where_clause,
     )
   else:
+    connection_clause = _build_connection_clause(connection_id)
     query = _AI_EMBED_SEMANTIC_DRIFT_QUERY.format(
         project=project_id,
         dataset=dataset_id,
@@ -585,6 +595,8 @@ async def _semantic_drift(
         golden_table=golden_table,
         endpoint=embedding_model,
         where=where_clause,
+        golden_connection_clause=connection_clause,
+        production_connection_clause=connection_clause,
     )
 
   job_config = bq_mod.QueryJobConfig(query_parameters=query_params)

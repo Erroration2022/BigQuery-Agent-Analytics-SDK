@@ -246,6 +246,45 @@ class TestDriftDedupedMetrics:
     assert report.details["raw_golden_count"] == 3
     assert report.details["unique_golden_count"] == 2
 
+  async def test_semantic_drift_uses_connection_id(self):
+    """AI.EMBED semantic drift SQL should include connection_id."""
+    mock_client = MagicMock()
+
+    golden_result = MagicMock()
+    golden_result.result.return_value = [_MockRow({"question": "Q1"})]
+    prod_result = MagicMock()
+    prod_result.result.return_value = [_MockRow({"question": "Q1"})]
+    semantic_result = MagicMock()
+    semantic_result.result.return_value = [
+        _MockRow(
+            {
+                "golden_question": "Q1",
+                "closest_production": "Q1",
+                "distance": 0.1,
+            }
+        ),
+    ]
+    mock_client.query.side_effect = [
+        golden_result,
+        prod_result,
+        semantic_result,
+    ]
+
+    await compute_drift(
+        bq_client=mock_client,
+        project_id="p",
+        dataset_id="d",
+        table_id="t",
+        golden_table="golden",
+        where_clause="1=1",
+        query_params=[],
+        embedding_model="text-embedding-005",
+        connection_id="proj.us.conn",
+    )
+
+    semantic_sql = mock_client.query.call_args_list[2][0][0]
+    assert semantic_sql.count("connection_id => 'proj.us.conn'") == 2
+
 
 # ================================================================== #
 # P3/Feature: parse_errors in report.details, not aggregate_scores     #

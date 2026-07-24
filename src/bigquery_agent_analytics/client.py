@@ -1991,6 +1991,7 @@ class Client:
         where_clause=where,
         query_params=params,
         embedding_model=embedding_model,
+        connection_id=self.connection_id,
     )
 
   async def deep_analysis_async(

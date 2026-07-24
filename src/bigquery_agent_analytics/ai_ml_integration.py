@@ -142,6 +142,14 @@ class BatchEvaluationResult(BaseModel):
   )
 
 
+def _build_connection_clause(connection_id: str | None) -> str:
+  """Build an optional AI Operator connection_id named argument."""
+  if not connection_id:
+    return ""
+  escaped = connection_id.replace("'", "''")
+  return f"\n      connection_id => '{escaped}',"
+
+
 class BigQueryAIClient:
   """Client for BigQuery AI functions.
 
@@ -167,7 +175,7 @@ class BigQueryAIClient:
   SELECT
     content,
     AI.EMBED(
-      content,
+      content,{connection_clause}
       endpoint => '{endpoint}'
     ).result AS embedding
   FROM UNNEST(@texts) AS content
@@ -267,9 +275,7 @@ class BigQueryAIClient:
     """
     ep = endpoint or self.endpoint
     cid = connection_id or self.connection_id
-    connection_clause = ""
-    if cid:
-      connection_clause = f"\n    connection_id => '{cid}',"
+    connection_clause = _build_connection_clause(cid)
     query = self._AI_GENERATE_QUERY.format(
         endpoint=ep,
         temperature=temperature,
@@ -328,6 +334,7 @@ class BigQueryAIClient:
     else:
       query = self._AI_EMBED_QUERY.format(
           endpoint=self.embedding_endpoint,
+          connection_clause=_build_connection_clause(self.connection_id),
       )
 
     job_config = bigquery.QueryJobConfig(
@@ -450,7 +457,7 @@ class EmbeddingSearchClient:
     e.timestamp,
     e.user_id,
     AI.EMBED(
-      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),
+      JSON_EXTRACT_SCALAR(e.content, '$.text_summary'),{connection_clause}
       endpoint => '{endpoint}'
     ).result as embedding
   FROM `{project}.{dataset}.{source_table}` e
@@ -498,6 +505,7 @@ class EmbeddingSearchClient:
       client: Optional[bigquery.Client] = None,
       embedding_model: Optional[str] = None,
       embedding_endpoint: str = "text-embedding-005",
+      connection_id: Optional[str] = None,
   ) -> None:
     """Initializes EmbeddingSearchClient.
 
@@ -512,6 +520,7 @@ class EmbeddingSearchClient:
             is used.  Pass ``None`` (default) to use ``AI.EMBED``.
         embedding_endpoint: Vertex AI endpoint for ``AI.EMBED``
             (default ``text-embedding-005``).
+        connection_id: Optional BigQuery connection resource ID.
     """
     self.project_id = project_id
     self.dataset_id = dataset_id
@@ -520,6 +529,7 @@ class EmbeddingSearchClient:
     self._client = client
     self.embedding_model = embedding_model
     self.embedding_endpoint = embedding_endpoint
+    self.connection_id = connection_id
 
   @property
   def client(self) -> bigquery.Client:
@@ -631,6 +641,7 @@ class EmbeddingSearchClient:
           table=self.embeddings_table,
           source_table=self.source_table,
           endpoint=self.embedding_endpoint,
+          connection_clause=_build_connection_clause(self.connection_id),
       )
 
     job_config = bigquery.QueryJobConfig(
@@ -1384,9 +1395,7 @@ class BatchEvaluator:
     Returns:
         List of BatchEvaluationResult objects.
     """
-    connection_clause = ""
-    if self.connection_id:
-      connection_clause = f"\n    connection_id => '{self.connection_id}',"
+    connection_clause = _build_connection_clause(self.connection_id)
     query = self._BATCH_EVALUATION_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
