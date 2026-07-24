@@ -660,6 +660,27 @@ class TestAIEmbedMigration:
     assert "ML.GENERATE_EMBEDDING" not in query_str
 
   @pytest.mark.asyncio
+  async def test_generate_embeddings_uses_connection_id(self):
+    """AI.EMBED SQL should include connection_id when configured."""
+    mock_bq = MagicMock()
+    mock_job = MagicMock()
+    mock_job.result.return_value = [
+        {"content": "hello", "embedding": [0.1, 0.2]},
+    ]
+    mock_bq.query.return_value = mock_job
+
+    client = BigQueryAIClient(
+        project_id="p",
+        dataset_id="d",
+        client=mock_bq,
+        connection_id="proj.us.conn",
+    )
+    await client.generate_embeddings(["hello"])
+
+    query_str = mock_bq.query.call_args[0][0]
+    assert "connection_id => 'proj.us.conn'" in query_str
+
+  @pytest.mark.asyncio
   async def test_generate_embeddings_uses_legacy_when_model_set(self):
     """Legacy path is used when embedding_model is a BQ ML ref."""
     mock_bq = MagicMock()
@@ -744,6 +765,25 @@ class TestEmbeddingSearchAIEmbedMigration:
     executed_sql = mock_bq.query.call_args[0][0]
     assert "AI.EMBED" in executed_sql
     assert "ML.GENERATE_EMBEDDING" not in executed_sql
+
+  @pytest.mark.asyncio
+  async def test_build_embeddings_index_uses_connection_id(self):
+    """AI.EMBED index SQL should include connection_id when configured."""
+    mock_bq = MagicMock()
+    mock_job = MagicMock()
+    mock_bq.query.return_value = mock_job
+    mock_job.result.return_value = []
+
+    client = EmbeddingSearchClient(
+        project_id="p",
+        dataset_id="d",
+        client=mock_bq,
+        connection_id="proj.us.conn",
+    )
+    await client.build_embeddings_index(since_days=7)
+
+    executed_sql = mock_bq.query.call_args[0][0]
+    assert "connection_id => 'proj.us.conn'" in executed_sql
 
 
 class TestAIDetectAnomaliesMigration:
