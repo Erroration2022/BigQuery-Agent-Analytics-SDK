@@ -128,6 +128,7 @@ class BigFramesEvaluator:
         f".{self.table_id}` "
         "GROUP BY session_id "
         "HAVING LENGTH(trace_text) > 10 "
+        "ORDER BY MAX(timestamp) DESC "
         f"LIMIT {max_sessions}"
     )
 
