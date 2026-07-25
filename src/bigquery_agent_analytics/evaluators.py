@@ -721,6 +721,7 @@ SELECT
 FROM `{project}.{dataset}.{table}`
 WHERE {where}
 GROUP BY session_id
+ORDER BY MAX(timestamp) DESC
 LIMIT @trace_limit
 """
 
@@ -747,6 +748,7 @@ WITH session_traces AS (
   WHERE {where}
   GROUP BY session_id
   HAVING LENGTH(trace_text) > 10
+  ORDER BY MAX(timestamp) DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -791,6 +793,7 @@ WITH session_traces AS (
   WHERE {where}
   GROUP BY session_id
   HAVING LENGTH(trace_text) > 10
+  ORDER BY MAX(timestamp) DESC
   LIMIT @trace_limit
 )
 SELECT

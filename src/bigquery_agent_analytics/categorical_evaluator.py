@@ -240,6 +240,7 @@ FROM `{project}.{dataset}.{table}`
 WHERE {where}
 GROUP BY session_id
 HAVING LENGTH(transcript) > 10
+ORDER BY MAX(timestamp) DESC
 LIMIT @trace_limit
 """
 
@@ -265,6 +266,7 @@ WITH session_transcripts AS (
   WHERE {where}
   GROUP BY session_id
   HAVING LENGTH(transcript) > 10
+  ORDER BY MAX(timestamp) DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -385,6 +387,7 @@ WITH session_transcripts AS (
   WHERE {where}
   GROUP BY session_id
   HAVING LENGTH(transcript) > 10
+  ORDER BY MAX(timestamp) DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -453,6 +456,7 @@ WITH session_transcripts AS (
   WHERE {where}
   GROUP BY session_id
   HAVING LENGTH(transcript) > 10
+  ORDER BY MAX(timestamp) DESC
   LIMIT @trace_limit
 )
 SELECT

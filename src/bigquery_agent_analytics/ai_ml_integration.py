@@ -1256,6 +1256,7 @@ class BatchEvaluator:
       )
     GROUP BY session_id
     HAVING LENGTH(trace_text) > 10
+    ORDER BY MAX(timestamp) DESC
     LIMIT @limit
   )
   SELECT
@@ -1304,6 +1305,7 @@ class BatchEvaluator:
       )
     GROUP BY session_id
     HAVING LENGTH(trace_text) > 10
+    ORDER BY MAX(timestamp) DESC
     LIMIT @limit
   )
   SELECT
