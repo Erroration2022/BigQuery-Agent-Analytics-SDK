@@ -99,6 +99,7 @@ FROM `{project}.{dataset}.{table}`
 WHERE event_type = 'USER_MESSAGE_RECEIVED'
   AND JSON_EXTRACT_SCALAR(content, '$.text_summary') IS NOT NULL
   AND {where}
+ORDER BY timestamp DESC
 LIMIT @trace_limit
 """
 
@@ -133,6 +134,7 @@ production AS (
       content, '$.text_summary'
     ) IS NOT NULL
     AND {where}
+  ORDER BY timestamp DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -178,6 +180,7 @@ production AS (
       content, '$.text_summary'
     ) IS NOT NULL
     AND {where}
+  ORDER BY timestamp DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -327,6 +330,7 @@ WITH questions AS (
       content, '$.text_summary'
     ) IS NOT NULL
     AND {where}
+  ORDER BY timestamp DESC
   LIMIT @trace_limit
 )
 SELECT
@@ -360,6 +364,7 @@ WITH questions AS (
       content, '$.text_summary'
     ) IS NOT NULL
     AND {where}
+  ORDER BY timestamp DESC
   LIMIT @trace_limit
 )
 SELECT
