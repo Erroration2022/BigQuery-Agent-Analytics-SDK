@@ -16,7 +16,11 @@
 
 import pytest
 
+from bigquery_agent_analytics.feedback import _AI_EMBED_SEMANTIC_DRIFT_QUERY
 from bigquery_agent_analytics.feedback import _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+from bigquery_agent_analytics.feedback import _LEGACY_SEMANTIC_DRIFT_QUERY
+from bigquery_agent_analytics.feedback import _LEGACY_SEMANTIC_GROUPING_QUERY
+from bigquery_agent_analytics.feedback import _PRODUCTION_QUESTIONS_QUERY
 from bigquery_agent_analytics.feedback import AnalysisConfig
 from bigquery_agent_analytics.feedback import DriftReport
 from bigquery_agent_analytics.feedback import QuestionCategory
@@ -165,3 +169,33 @@ class TestAIGenerateSemanticGroupingQuery:
 
   def test_does_not_contain_ml_generate_text(self):
     assert "ML.GENERATE_TEXT" not in _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+
+
+class TestFeedbackProductionSamplingOrder:
+  """Drift and semantic grouping must order before LIMIT for stable sampling."""
+
+  def test_production_questions_orders_by_recency(self):
+    assert "ORDER BY timestamp DESC" in _PRODUCTION_QUESTIONS_QUERY
+    assert _PRODUCTION_QUESTIONS_QUERY.index("ORDER BY") < _PRODUCTION_QUESTIONS_QUERY.index(
+        "LIMIT @trace_limit"
+    )
+
+  def test_ai_embed_semantic_drift_orders_production_rows(self):
+    assert "ORDER BY timestamp DESC" in _AI_EMBED_SEMANTIC_DRIFT_QUERY
+    production_section = _AI_EMBED_SEMANTIC_DRIFT_QUERY.split("production AS")[1]
+    assert production_section.index("ORDER BY") < production_section.index("LIMIT @trace_limit")
+
+  def test_legacy_semantic_drift_orders_production_rows(self):
+    assert "ORDER BY timestamp DESC" in _LEGACY_SEMANTIC_DRIFT_QUERY
+    production_section = _LEGACY_SEMANTIC_DRIFT_QUERY.split("production AS")[1]
+    assert production_section.index("ORDER BY") < production_section.index("LIMIT @trace_limit")
+
+  def test_ai_generate_semantic_grouping_orders_before_limit(self):
+    questions_section = _AI_GENERATE_SEMANTIC_GROUPING_QUERY.split("WITH questions AS")[1]
+    assert "ORDER BY timestamp DESC" in questions_section
+    assert questions_section.index("ORDER BY") < questions_section.index("LIMIT @trace_limit")
+
+  def test_legacy_semantic_grouping_orders_before_limit(self):
+    questions_section = _LEGACY_SEMANTIC_GROUPING_QUERY.split("WITH questions AS")[1]
+    assert "ORDER BY timestamp DESC" in questions_section
+    assert questions_section.index("ORDER BY") < questions_section.index("LIMIT @trace_limit")
