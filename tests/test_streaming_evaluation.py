@@ -30,6 +30,7 @@ import pytest
 
 from bigquery_agent_analytics._deploy_runtime import resolve_client_options
 from bigquery_agent_analytics._streaming_evaluation import build_streaming_observability_evaluator
+from bigquery_agent_analytics._streaming_evaluation import build_trace_filter_for_trigger
 from bigquery_agent_analytics._streaming_evaluation import build_trigger_dedupe_key
 from bigquery_agent_analytics._streaming_evaluation import classify_trigger_kind
 from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
@@ -287,6 +288,24 @@ class TestHelpers:
     )
     assert scan_start == _NOW - timedelta(minutes=30)
 
+  def test_build_trace_filter_for_trigger_scopes_to_trigger_timestamp(self):
+    trigger = parse_trigger_payload(
+        {
+            "session_id": "sess-1",
+            "trace_id": "trace-1",
+            "span_id": "span-1",
+            "event_type": "TOOL_ERROR",
+            "trigger_kind": "error_event",
+            "trigger_timestamp": "2026-03-28T18:30:00Z",
+        }
+    )
+
+    filt = build_trace_filter_for_trigger(trigger)
+
+    assert filt.session_ids == ["sess-1"]
+    assert filt.end_time == trigger.trigger_timestamp
+    assert filt.limit == 1
+
   def test_serialize_result_row_uses_session_scores(self):
     trigger = parse_trigger_payload(
         {
@@ -380,6 +399,92 @@ class TestWorker:
     assert result_params["trigger_kind"] == "session_terminal"
     assert result_params["is_final"] is True
     assert result_params["evaluator_profile"] == STREAMING_EVALUATOR_PROFILE
+
+  def test_evaluate_uses_trigger_timestamp_as_end_time(
+      self,
+      streaming_worker,
+      monkeypatch,
+  ):
+    trigger_timestamp = _NOW - timedelta(minutes=5)
+    fake_bq = _FakeBigQueryClient(
+        trigger_rows=[
+            {
+                "session_id": "sess-1",
+                "trace_id": "trace-1",
+                "span_id": "span-error",
+                "event_type": "TOOL_ERROR",
+                "status": "ERROR",
+                "error_message": "boom",
+                "trigger_timestamp": trigger_timestamp,
+                "trigger_kind": "error_event",
+            }
+        ]
+    )
+    client = MagicMock()
+    client.project_id = "proj"
+    client.dataset_id = "agent_trace"
+    client.table_id = "agent_events"
+    client.bq_client = fake_bq
+    client.evaluate.return_value = _report()
+    monkeypatch.setattr(
+        streaming_worker,
+        "build_client_from_context",
+        MagicMock(return_value=client),
+    )
+
+    response, status = streaming_worker.handle_scheduled_run({}, now=_NOW)
+
+    assert status == 200
+    assert response["processed_rows"] == 1
+    evaluate_kwargs = client.evaluate.call_args.kwargs
+    filt = evaluate_kwargs["filters"]
+    assert filt.session_ids == ["sess-1"]
+    assert filt.end_time == trigger_timestamp
+    assert filt.limit == 1
+
+  def test_state_merge_uses_monotonic_checkpoint(
+      self,
+      streaming_worker,
+      monkeypatch,
+  ):
+    fake_bq = _FakeBigQueryClient(
+        trigger_rows=[
+            {
+                "session_id": "sess-1",
+                "trace_id": "trace-1",
+                "span_id": "span-1",
+                "event_type": "AGENT_COMPLETED",
+                "status": "OK",
+                "error_message": None,
+                "trigger_timestamp": _NOW,
+                "trigger_kind": "session_terminal",
+            }
+        ]
+    )
+    client = MagicMock()
+    client.project_id = "proj"
+    client.dataset_id = "agent_trace"
+    client.table_id = "agent_events"
+    client.bq_client = fake_bq
+    client.evaluate.return_value = _report()
+    monkeypatch.setattr(
+        streaming_worker,
+        "build_client_from_context",
+        MagicMock(return_value=client),
+    )
+
+    streaming_worker.handle_scheduled_run({}, now=_NOW)
+
+    state_queries = [
+        query
+        for query in fake_bq.queries
+        if "_streaming_eval_state" in query and query.lstrip().startswith("MERGE")
+    ]
+    assert len(state_queries) == 1
+    assert (
+        "GREATEST(T.checkpoint_timestamp, S.checkpoint_timestamp)"
+        in state_queries[0]
+    )
 
   def test_duplicate_trigger_returns_200(self, streaming_worker, monkeypatch):
     fake_bq = _FakeBigQueryClient(
@@ -626,7 +731,7 @@ class TestWorker:
                 "trigger_kind": "session_terminal",
             }
         ],
-        error_on="checkpoint_timestamp = S.checkpoint_timestamp",
+        error_on="GREATEST(T.checkpoint_timestamp, S.checkpoint_timestamp)",
     )
     client = MagicMock()
     client.project_id = "proj"
