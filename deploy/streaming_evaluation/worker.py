@@ -32,10 +32,10 @@ from typing import Any
 
 from google.cloud import bigquery
 
-from bigquery_agent_analytics import TraceFilter
 from bigquery_agent_analytics._deploy_runtime import build_client_from_context
 from bigquery_agent_analytics._deploy_runtime import resolve_client_options
 from bigquery_agent_analytics._streaming_evaluation import build_streaming_observability_evaluator
+from bigquery_agent_analytics._streaming_evaluation import build_trace_filter_for_trigger
 from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_INITIAL_LOOKBACK_MINUTES
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_OVERLAP_MINUTES
@@ -149,7 +149,7 @@ USING (
 ON T.processor_name = S.processor_name
 WHEN MATCHED THEN
   UPDATE SET
-    checkpoint_timestamp = S.checkpoint_timestamp,
+    checkpoint_timestamp = GREATEST(T.checkpoint_timestamp, S.checkpoint_timestamp),
     updated_at = S.updated_at
 WHEN NOT MATCHED THEN
   INSERT (
@@ -293,10 +293,7 @@ def handle_scheduled_run(
 
       report = client.evaluate(
           evaluator=evaluator,
-          filters=TraceFilter.from_cli_args(
-              session_id=trigger.session_id,
-              limit=1,
-          ),
+          filters=build_trace_filter_for_trigger(trigger),
       )
       if report.total_sessions == 0:
         logger.warning(

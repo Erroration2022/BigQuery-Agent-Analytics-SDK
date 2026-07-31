@@ -29,6 +29,7 @@ from bigquery_agent_analytics import CodeEvaluator
 from bigquery_agent_analytics import EvaluationReport
 from bigquery_agent_analytics import serialize
 from bigquery_agent_analytics import udf_kernels
+from bigquery_agent_analytics.trace import TraceFilter
 
 STREAMING_EVALUATOR_PROFILE = "streaming_observability_v1"
 STREAMING_PROCESSOR_NAME = STREAMING_EVALUATOR_PROFILE
@@ -197,6 +198,20 @@ def parse_trigger_row(row: Mapping[str, Any]) -> StreamingTrigger:
       error_message=payload.get("error_message"),
   )
   return parse_trigger_payload(payload)
+
+
+def build_trace_filter_for_trigger(trigger: StreamingTrigger) -> TraceFilter:
+  """Build a trace filter scoped to the trigger's point in time.
+
+  Streaming triggers are meant to evaluate session state as it existed when
+  the trigger fired. Without an upper time bound, later recovery events can
+  dilute error metrics and produce false passes on ``error_event`` rows.
+  """
+  return TraceFilter(
+      session_ids=[trigger.session_id],
+      end_time=trigger.trigger_timestamp,
+      limit=1,
+  )
 
 
 def serialize_streaming_result_row(
