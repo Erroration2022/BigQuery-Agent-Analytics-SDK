@@ -756,6 +756,24 @@ class TestSessionMetadataQuery:
     assert "JSON_VALUE" in _SESSION_METADATA_QUERY
     assert "JSON_EXTRACT_SCALAR" not in _SESSION_METADATA_QUERY
 
+  def test_metadata_query_omits_trace_limit_param(self):
+    from bigquery_agent_analytics.insights import _SESSION_METADATA_QUERY
+    from bigquery_agent_analytics.trace import TraceFilter
+
+    filt = TraceFilter(agent_id="agent_a")
+    where, params = filt.to_sql_conditions(include_trace_limit=False)
+    query = _SESSION_METADATA_QUERY.format(
+        project="proj",
+        dataset="ds",
+        table="agent_events",
+        where=where,
+    )
+
+    param_names = {param.name for param in params}
+    assert "trace_limit" not in param_names
+    for name in param_names:
+      assert f"@{name}" in query
+
 
 class TestSessionMetadataFromRow:
   """Tests that SessionMetadata correctly parses hitl/state fields from rows."""

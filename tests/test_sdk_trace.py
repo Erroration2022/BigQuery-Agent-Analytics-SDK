@@ -451,6 +451,12 @@ class TestTraceFilter:
     assert where == "TRUE"
     assert len(params) == 1  # trace_limit
 
+  def test_empty_filter_without_trace_limit(self):
+    filt = TraceFilter()
+    where, params = filt.to_sql_conditions(include_trace_limit=False)
+    assert where == "TRUE"
+    assert params == []
+
   def test_time_range_filter(self):
     filt = TraceFilter(
         start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),

@@ -432,8 +432,17 @@ class TraceFilter:
         limit=limit,
     )
 
-  def to_sql_conditions(self) -> tuple[str, list]:
+  def to_sql_conditions(
+      self,
+      *,
+      include_trace_limit: bool = True,
+  ) -> tuple[str, list]:
     """Converts filter to SQL WHERE clauses and query parameters.
+
+    Args:
+        include_trace_limit: When ``False``, omit the ``@trace_limit``
+            parameter for queries that apply their own session limits
+            (for example insights metadata and health-check coverage).
 
     Returns:
         Tuple of (SQL conditions string, list of BQ query params).
@@ -585,13 +594,14 @@ class TraceFilter:
           )
       )
 
-    params.append(
-        bigquery.ScalarQueryParameter(
-            "trace_limit",
-            "INT64",
-            self.limit,
-        )
-    )
+    if include_trace_limit:
+      params.append(
+          bigquery.ScalarQueryParameter(
+              "trace_limit",
+              "INT64",
+              self.limit,
+          )
+      )
 
     where = " AND ".join(conditions) if conditions else "TRUE"
     return where, params
