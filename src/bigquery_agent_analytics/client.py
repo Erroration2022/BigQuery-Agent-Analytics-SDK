@@ -455,7 +455,7 @@ class Client:
             }
     """
     filt = filters or TraceFilter()
-    where, params = filt.to_sql_conditions()
+    where, params = filt.to_sql_conditions(include_trace_limit=False)
     report: dict[str, Any] = {
         "table": self._table_ref,
         "warnings": [],
@@ -585,7 +585,7 @@ class Client:
             }
     """
     filt = filters or TraceFilter()
-    where, params = filt.to_sql_conditions()
+    where, params = filt.to_sql_conditions(include_trace_limit=False)
 
     query = _HITL_METRICS_QUERY.format(
         project=self.project_id,
@@ -1605,7 +1605,7 @@ class Client:
     cfg = config or InsightsConfig()
     model = text_model or self.endpoint
 
-    where, params = filt.to_sql_conditions()
+    where, params = filt.to_sql_conditions(include_trace_limit=False)
 
     # Step 1: Extract session metadata
     metadata_list = await self._fetch_session_metadata(
