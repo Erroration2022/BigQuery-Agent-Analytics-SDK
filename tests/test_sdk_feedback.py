@@ -17,10 +17,14 @@
 import pytest
 
 from bigquery_agent_analytics.feedback import _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+from bigquery_agent_analytics.feedback import _FREQUENTLY_ASKED_QUERY
+from bigquery_agent_analytics.feedback import _FREQUENTLY_UNANSWERED_QUERY
+from bigquery_agent_analytics.feedback import _params_referenced_in_query
 from bigquery_agent_analytics.feedback import AnalysisConfig
 from bigquery_agent_analytics.feedback import DriftReport
 from bigquery_agent_analytics.feedback import QuestionCategory
 from bigquery_agent_analytics.feedback import QuestionDistribution
+from bigquery_agent_analytics.trace import TraceFilter
 
 
 class TestDriftReport:
@@ -165,3 +169,37 @@ class TestAIGenerateSemanticGroupingQuery:
 
   def test_does_not_contain_ml_generate_text(self):
     assert "ML.GENERATE_TEXT" not in _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+
+
+class TestFrequentlyAskedQueryParams:
+  """Frequently asked/unanswered queries must not bind unused @trace_limit."""
+
+  def test_frequently_asked_omits_trace_limit_param(self):
+    filt = TraceFilter(agent_id="agent_a")
+    where, params = filt.to_sql_conditions()
+    query = _FREQUENTLY_ASKED_QUERY.format(
+        project="proj",
+        dataset="ds",
+        table="agent_events",
+        where=where,
+    )
+    bound = _params_referenced_in_query(query, params)
+    param_names = {param.name for param in bound}
+    assert "trace_limit" not in param_names
+    for name in param_names:
+      assert f"@{name}" in query
+
+  def test_frequently_unanswered_omits_trace_limit_param(self):
+    filt = TraceFilter(agent_id="agent_a")
+    where, params = filt.to_sql_conditions()
+    query = _FREQUENTLY_UNANSWERED_QUERY.format(
+        project="proj",
+        dataset="ds",
+        table="agent_events",
+        where=where,
+    )
+    bound = _params_referenced_in_query(query, params)
+    param_names = {param.name for param in bound}
+    assert "trace_limit" not in param_names
+    for name in param_names:
+      assert f"@{name}" in query
