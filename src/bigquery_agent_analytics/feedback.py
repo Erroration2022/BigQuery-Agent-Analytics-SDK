@@ -43,6 +43,11 @@ from pydantic import Field
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
+def _params_referenced_in_query(query: str, query_params: list) -> list:
+  """Return only query parameters referenced by ``@name`` in the SQL."""
+  return [param for param in query_params if f"@{param.name}" in query]
+
+
 # ------------------------------------------------------------------ #
 # Drift Detection                                                      #
 # ------------------------------------------------------------------ #
@@ -733,15 +738,15 @@ async def _frequently_asked(
   """Computes frequently asked questions."""
   from google.cloud import bigquery
 
-  params = list(query_params) + [
-      bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
-  ]
   query = _FREQUENTLY_ASKED_QUERY.format(
       project=project_id,
       dataset=dataset_id,
       table=table_id,
       where=where_clause,
   )
+  params = _params_referenced_in_query(query, query_params) + [
+      bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
+  ]
   job_config = bigquery.QueryJobConfig(query_parameters=params)
   job = await loop.run_in_executor(
       None,
@@ -786,15 +791,15 @@ async def _frequently_unanswered(
   """Computes frequently unanswered questions."""
   from google.cloud import bigquery
 
-  params = list(query_params) + [
-      bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
-  ]
   query = _FREQUENTLY_UNANSWERED_QUERY.format(
       project=project_id,
       dataset=dataset_id,
       table=table_id,
       where=where_clause,
   )
+  params = _params_referenced_in_query(query, query_params) + [
+      bigquery.ScalarQueryParameter("top_k", "INT64", top_k),
+  ]
   job_config = bigquery.QueryJobConfig(query_parameters=params)
   job = await loop.run_in_executor(
       None,
