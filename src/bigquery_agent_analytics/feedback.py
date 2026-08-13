@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from dataclasses import field
 import json
 import logging
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -95,7 +96,7 @@ _PRODUCTION_QUESTIONS_QUERY = """\
 SELECT
   session_id,
   JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question
-FROM `{project}.{dataset}.{table}`
+FROM `{table_ref}`
 WHERE event_type = 'USER_MESSAGE_RECEIVED'
   AND JSON_EXTRACT_SCALAR(content, '$.text_summary') IS NOT NULL
   AND {where}
@@ -105,7 +106,7 @@ LIMIT @trace_limit
 # SQL: load golden questions
 _GOLDEN_QUESTIONS_QUERY = """\
 SELECT question
-FROM `{project}.{dataset}.{golden_table}`
+FROM `{golden_table_ref}`
 """
 
 # SQL: semantic drift using AI.EMBED (primary, no model creation needed)
@@ -117,7 +118,7 @@ WITH golden AS (
       question,
       endpoint => '{endpoint}'
     ).result AS embedding
-  FROM `{project}.{dataset}.{golden_table}`
+  FROM `{golden_table_ref}`
 ),
 production AS (
   SELECT
@@ -127,7 +128,7 @@ production AS (
       JSON_EXTRACT_SCALAR(content, '$.text_summary'),
       endpoint => '{endpoint}'
     ).result AS embedding
-  FROM `{project}.{dataset}.{table}`
+  FROM `{table_ref}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
     AND JSON_EXTRACT_SCALAR(
       content, '$.text_summary'
@@ -159,7 +160,7 @@ WITH golden AS (
       MODEL `{model}`,
       STRUCT(question AS content)
     ).ml_generate_embedding_result AS embedding
-  FROM `{project}.{dataset}.{golden_table}`
+  FROM `{golden_table_ref}`
 ),
 production AS (
   SELECT
@@ -172,7 +173,7 @@ production AS (
         AS content
       )
     ).ml_generate_embedding_result AS embedding
-  FROM `{project}.{dataset}.{table}`
+  FROM `{table_ref}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
     AND JSON_EXTRACT_SCALAR(
       content, '$.text_summary'
@@ -389,6 +390,51 @@ def _is_legacy_model_ref(ref: str) -> bool:
   return ref.count(".") >= 2
 
 
+_TABLE_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _resolve_table_ref(
+    table_id: str,
+    project_id: str,
+    dataset_id: str,
+    *,
+    param_name: str = "table_id",
+) -> str:
+  """Resolve a table identifier to ``project.dataset.table``.
+
+  Accepts either an unqualified table name (resolved against the
+  caller's project/dataset) or a fully-qualified
+  ``project.dataset.table`` reference as documented in SDK.md.
+  """
+  if not table_id:
+    raise ValueError(f"Invalid {param_name}: empty table identifier")
+
+  if table_id.count(".") == 2:
+    parts = table_id.split(".")
+    for part in parts:
+      if not _TABLE_ID_RE.fullmatch(part):
+        raise ValueError(
+            f"Invalid {param_name}: {table_id!r}. Each segment in a "
+            "fully-qualified table reference must contain only "
+            "letters, numbers, and underscores."
+        )
+    return table_id
+
+  if table_id.count(".") == 0:
+    if not _TABLE_ID_RE.fullmatch(table_id):
+      raise ValueError(
+          f"Invalid {param_name}: {table_id!r}. Must be an unqualified "
+          "table name or a fully-qualified project.dataset.table "
+          "reference."
+      )
+    return f"{project_id}.{dataset_id}.{table_id}"
+
+  raise ValueError(
+      f"Invalid {param_name}: {table_id!r}. Expected an unqualified "
+      "table name or a fully-qualified project.dataset.table reference."
+  )
+
+
 def _sanitize_categories(categories_str: str) -> str:
   """Escapes category text for safe embedding in SQL string literals.
 
@@ -426,13 +472,24 @@ async def compute_drift(
   """
   from google.cloud import bigquery
 
+  golden_table_ref = _resolve_table_ref(
+      golden_table,
+      project_id,
+      dataset_id,
+      param_name="golden_table",
+  )
+  table_ref = _resolve_table_ref(
+      table_id,
+      project_id,
+      dataset_id,
+      param_name="table_id",
+  )
+
   loop = asyncio.get_event_loop()
 
   # Load golden questions
   golden_q = _GOLDEN_QUESTIONS_QUERY.format(
-      project=project_id,
-      dataset=dataset_id,
-      golden_table=golden_table,
+      golden_table_ref=golden_table_ref,
   )
   golden_job = await loop.run_in_executor(
       None,
@@ -448,9 +505,7 @@ async def compute_drift(
 
   # Load production questions
   prod_q = _PRODUCTION_QUESTIONS_QUERY.format(
-      project=project_id,
-      dataset=dataset_id,
-      table=table_id,
+      table_ref=table_ref,
       where=where_clause,
   )
   job_config = bigquery.QueryJobConfig(
@@ -473,10 +528,8 @@ async def compute_drift(
     try:
       return await _semantic_drift(
           bq_client=bq_client,
-          project_id=project_id,
-          dataset_id=dataset_id,
-          table_id=table_id,
-          golden_table=golden_table,
+          table_ref=table_ref,
+          golden_table_ref=golden_table_ref,
           where_clause=where_clause,
           query_params=query_params,
           embedding_model=embedding_model,
@@ -524,10 +577,8 @@ async def compute_drift(
 
 async def _semantic_drift(
     bq_client: Any,
-    project_id: str,
-    dataset_id: str,
-    table_id: str,
-    golden_table: str,
+    table_ref: str,
+    golden_table_ref: str,
     where_clause: str,
     query_params: list,
     embedding_model: str,
@@ -547,10 +598,8 @@ async def _semantic_drift(
 
   Args:
       bq_client: BigQuery client instance.
-      project_id: GCP project ID.
-      dataset_id: BigQuery dataset.
-      table_id: Events table.
-      golden_table: Golden questions table.
+      table_ref: Fully-qualified production events table.
+      golden_table_ref: Fully-qualified golden questions table.
       where_clause: SQL WHERE clause for filtering.
       query_params: BigQuery query parameters.
       embedding_model: Vertex AI endpoint (e.g. ``text-embedding-005``)
@@ -570,19 +619,15 @@ async def _semantic_drift(
 
   if _is_legacy_model_ref(embedding_model):
     query = _LEGACY_SEMANTIC_DRIFT_QUERY.format(
-        project=project_id,
-        dataset=dataset_id,
-        table=table_id,
-        golden_table=golden_table,
+        table_ref=table_ref,
+        golden_table_ref=golden_table_ref,
         model=embedding_model,
         where=where_clause,
     )
   else:
     query = _AI_EMBED_SEMANTIC_DRIFT_QUERY.format(
-        project=project_id,
-        dataset=dataset_id,
-        table=table_id,
-        golden_table=golden_table,
+        table_ref=table_ref,
+        golden_table_ref=golden_table_ref,
         endpoint=embedding_model,
         where=where_clause,
     )
