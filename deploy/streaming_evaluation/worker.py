@@ -67,11 +67,9 @@ WHERE timestamp >= @scan_start
   AND session_id IS NOT NULL
   AND (
     event_type = 'AGENT_COMPLETED'
-    OR event_type = 'TOOL_ERROR'
-    OR (
-      status = 'ERROR'
-      AND error_message IS NOT NULL
-    )
+    OR ENDS_WITH(event_type, '_ERROR')
+    OR error_message IS NOT NULL
+    OR status = 'ERROR'
   )
 ORDER BY trigger_timestamp ASC
 """
@@ -252,6 +250,7 @@ class RunStats:
   processed_rows: int = 0
   duplicate_rows: int = 0
   ignored_rows: int = 0
+  failed_rows: int = 0
 
 
 def handle_scheduled_run(
@@ -291,13 +290,23 @@ def handle_scheduled_run(
         stats.ignored_rows += 1
         continue
 
-      report = client.evaluate(
-          evaluator=evaluator,
-          filters=TraceFilter.from_cli_args(
-              session_id=trigger.session_id,
-              limit=1,
-          ),
-      )
+      try:
+        report = client.evaluate(
+            evaluator=evaluator,
+            filters=TraceFilter.from_cli_args(
+                session_id=trigger.session_id,
+                limit=1,
+            ),
+        )
+      except Exception:
+        logger.exception(
+            "Evaluation failed for session_id=%s; continuing with remaining"
+            " triggers",
+            trigger.session_id,
+        )
+        stats.failed_rows += 1
+        continue
+
       if report.total_sessions == 0:
         logger.warning(
             "No events found for session_id=%s; skipping trigger",
@@ -354,6 +363,7 @@ def handle_scheduled_run(
       "processed_rows": stats.processed_rows,
       "duplicate_rows": stats.duplicate_rows,
       "ignored_rows": stats.ignored_rows,
+      "failed_rows": stats.failed_rows,
   }, 200
 
 

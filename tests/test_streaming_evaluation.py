@@ -241,6 +241,7 @@ class TestHelpers:
   def test_classify_trigger_kind_prefers_terminal_then_error(self):
     assert classify_trigger_kind("AGENT_COMPLETED") == "session_terminal"
     assert classify_trigger_kind("TOOL_ERROR") == "error_event"
+    assert classify_trigger_kind("LLM_ERROR") == "error_event"
     assert (
         classify_trigger_kind(
             "AGENT_STEP",
@@ -249,8 +250,8 @@ class TestHelpers:
         )
         == "error_event"
     )
-    assert classify_trigger_kind("AGENT_STEP", status="ERROR") is None
-    assert classify_trigger_kind("AGENT_STEP", error_message="boom") is None
+    assert classify_trigger_kind("AGENT_STEP", status="ERROR") == "error_event"
+    assert classify_trigger_kind("AGENT_STEP", error_message="boom") == "error_event"
     assert classify_trigger_kind("AGENT_STEP") is None
 
   def test_parse_trigger_row_classifies_from_overlap_scan_fields(self):
@@ -489,7 +490,7 @@ class TestWorker:
     ]
     client.evaluate.assert_not_called()
 
-  def test_bigquery_or_evaluation_failure_retries(
+  def test_evaluation_failure_is_isolated_and_run_succeeds(
       self,
       streaming_worker,
       monkeypatch,
@@ -522,9 +523,10 @@ class TestWorker:
 
     response, status = streaming_worker.handle_scheduled_run({}, now=_NOW)
 
-    assert status == 500
-    assert response["status"] == "retry"
-    assert response["reason"] == "internal error"
+    assert status == 200
+    assert response["status"] == "processed"
+    assert response["failed_rows"] == 1
+    assert response["processed_rows"] == 0
 
   def test_zero_session_report_is_skipped_not_retried(
       self,
@@ -753,6 +755,61 @@ class TestWorker:
         "session_terminal",
     ]
 
+  def test_evaluate_failure_does_not_block_later_triggers(
+      self,
+      streaming_worker,
+      monkeypatch,
+  ):
+    fake_bq = _FakeBigQueryClient(
+        trigger_rows=[
+            {
+                "session_id": "sess-fail",
+                "trace_id": "trace-1",
+                "span_id": "span-1",
+                "event_type": "LLM_ERROR",
+                "status": "OK",
+                "error_message": None,
+                "trigger_timestamp": _NOW,
+                "trigger_kind": "error_event",
+            },
+            {
+                "session_id": "sess-ok",
+                "trace_id": "trace-2",
+                "span_id": "span-2",
+                "event_type": "AGENT_COMPLETED",
+                "status": "OK",
+                "error_message": None,
+                "trigger_timestamp": _NOW + timedelta(minutes=1),
+                "trigger_kind": "session_terminal",
+            },
+        ]
+    )
+    client = MagicMock()
+    client.project_id = "proj"
+    client.dataset_id = "agent_trace"
+    client.table_id = "agent_events"
+    client.bq_client = fake_bq
+
+    def evaluate_side_effect(*args, **kwargs):
+      session_id = kwargs["filters"].session_ids[0]
+      if session_id == "sess-fail":
+        raise RuntimeError("transient BQ failure")
+      return _report()
+
+    client.evaluate.side_effect = evaluate_side_effect
+    monkeypatch.setattr(
+        streaming_worker,
+        "build_client_from_context",
+        MagicMock(return_value=client),
+    )
+
+    response, status = streaming_worker.handle_scheduled_run({}, now=_NOW)
+
+    assert status == 200
+    assert response["processed_rows"] == 1
+    assert response["failed_rows"] == 1
+    assert response["duplicate_rows"] == 0
+
   def test_invalid_overlap_env_uses_default(
       self,
       streaming_worker,
@@ -775,14 +832,14 @@ class TestWorker:
 
 class TestDeployAssets:
 
-  def test_trigger_query_contains_exact_launch_filters(self):
+  def test_trigger_query_contains_canonical_error_filters(self):
     sql = (_ROOT / "deploy/streaming_evaluation/trigger_query.sql").read_text()
 
     assert "event_type = 'AGENT_COMPLETED'" in sql
-    assert "event_type = 'TOOL_ERROR'" in sql
-    assert "status = 'ERROR'" in sql
+    assert "ENDS_WITH(event_type, '_ERROR')" in sql
     assert "error_message IS NOT NULL" in sql
-    assert "OR status = 'ERROR'" not in sql
+    assert "status = 'ERROR'" in sql
+    assert "event_type = 'TOOL_ERROR'" not in sql
 
   def test_trigger_query_matches_worker_scan_query(self, streaming_worker):
     sql = (_ROOT / "deploy/streaming_evaluation/trigger_query.sql").read_text()
