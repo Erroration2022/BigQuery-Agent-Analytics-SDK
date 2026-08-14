@@ -25,10 +25,8 @@ WHERE timestamp >= SCAN_START
   AND session_id IS NOT NULL
   AND (
     event_type = 'AGENT_COMPLETED'
-    OR event_type = 'TOOL_ERROR'
-    OR (
-      status = 'ERROR'
-      AND error_message IS NOT NULL
-    )
+    OR ENDS_WITH(event_type, '_ERROR')
+    OR error_message IS NOT NULL
+    OR status = 'ERROR'
   )
 ORDER BY trigger_timestamp ASC;

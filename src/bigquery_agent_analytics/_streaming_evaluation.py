@@ -29,6 +29,7 @@ from bigquery_agent_analytics import CodeEvaluator
 from bigquery_agent_analytics import EvaluationReport
 from bigquery_agent_analytics import serialize
 from bigquery_agent_analytics import udf_kernels
+from bigquery_agent_analytics.udf_kernels import is_error_event
 
 STREAMING_EVALUATOR_PROFILE = "streaming_observability_v1"
 STREAMING_PROCESSOR_NAME = STREAMING_EVALUATOR_PROFILE
@@ -106,9 +107,7 @@ def classify_trigger_kind(
   """Classify an event row into a launch trigger kind."""
   if event_type == "AGENT_COMPLETED":
     return TRIGGER_KIND_SESSION_TERMINAL
-  if event_type == "TOOL_ERROR":
-    return TRIGGER_KIND_ERROR_EVENT
-  if status == "ERROR" and error_message is not None:
+  if is_error_event(event_type or "", error_message, status or "OK"):
     return TRIGGER_KIND_ERROR_EVENT
   return None
 
