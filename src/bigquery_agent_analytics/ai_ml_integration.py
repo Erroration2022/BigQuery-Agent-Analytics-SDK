@@ -1239,7 +1239,14 @@ class BatchEvaluator:
           COALESCE(
             JSON_EXTRACT_SCALAR(
               content, '$.text_summary'
-            ), ''
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.response'
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.tool'
+            ),
+            ''
           )
         ),
         '\\n' ORDER BY timestamp
@@ -1287,7 +1294,14 @@ class BatchEvaluator:
           COALESCE(
             JSON_EXTRACT_SCALAR(
               content, '$.text_summary'
-            ), ''
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.response'
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.tool'
+            ),
+            ''
           )
         ),
         '\\n' ORDER BY timestamp
