@@ -123,6 +123,36 @@ class TestBigFramesEvaluatorEvaluate:
       assert "score" in schema
       assert "justification" in schema
 
+  def test_evaluate_sessions_includes_response_fallback(self):
+    """Trace aggregation should fall back to response/tool content."""
+    modules, mock_bpd, mock_bbq = _install_mock_bigframes()
+
+    mock_df = MagicMock()
+    mock_df.__getitem__ = MagicMock(return_value=MagicMock())
+    mock_df.__setitem__ = MagicMock()
+
+    mock_result = MagicMock()
+    mock_result.__getitem__ = MagicMock(
+        return_value=mock_result,
+    )
+    mock_result.__setitem__ = MagicMock()
+
+    mock_bpd.read_gbq = MagicMock(return_value=mock_df)
+    mock_bbq.ai.generate = MagicMock(
+        return_value=mock_result,
+    )
+
+    with patch.dict(sys.modules, modules):
+      ev = BigFramesEvaluator(
+          project_id="proj",
+          dataset_id="ds",
+      )
+      ev.evaluate_sessions(max_sessions=10)
+
+      sql = mock_bpd.read_gbq.call_args[0][0]
+      assert "$.response" in sql
+      assert "$.tool" in sql
+
 
 class TestBigFramesEvaluatorFacets:
   """Tests for BigFramesEvaluator.extract_facets()."""

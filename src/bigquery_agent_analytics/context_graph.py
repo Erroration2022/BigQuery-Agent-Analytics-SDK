@@ -72,6 +72,8 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 from pydantic import Field
 
+from .categorical_evaluator import _escape_sql_string_literal
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
@@ -1067,7 +1069,9 @@ class ContextGraphManager:
     """Server-side extraction using AI.GENERATE with MERGE upsert."""
     self._ensure_biz_nodes_table()
 
-    entity_types_str = ", ".join(self.config.entity_types)
+    entity_types_str = ", ".join(
+        _escape_sql_string_literal(et) for et in self.config.entity_types
+    )
     query = _EXTRACT_BIZ_NODES_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,

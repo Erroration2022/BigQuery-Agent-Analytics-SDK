@@ -121,8 +121,11 @@ class BigFramesEvaluator:
     query = (
         "SELECT session_id, STRING_AGG("
         "CONCAT(event_type, ': ', "
-        "COALESCE(JSON_EXTRACT_SCALAR("
-        "content, '$.text_summary'), '')), "
+        "COALESCE("
+        "JSON_EXTRACT_SCALAR(content, '$.text_summary'), "
+        "JSON_EXTRACT_SCALAR(content, '$.response'), "
+        "JSON_EXTRACT_SCALAR(content, '$.tool'), "
+        "'')), "
         "'\\n' ORDER BY timestamp) AS trace_text "
         f"FROM `{self.project_id}.{self.dataset_id}"
         f".{self.table_id}` "
