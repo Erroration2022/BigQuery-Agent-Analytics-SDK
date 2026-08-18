@@ -207,6 +207,26 @@ class TestContextGraphManager:
     with pytest.raises(ValueError, match="Legacy BQ ML"):
       mgr._resolve_endpoint()
 
+  def test_extract_biz_nodes_escapes_entity_types_in_sql(self):
+    """Entity types with quotes must not break AI.GENERATE SQL literals."""
+    mock_client = MagicMock()
+    mock_job = MagicMock()
+    mock_job.result.return_value = []
+    mock_client.query.return_value = mock_job
+
+    mgr = self._make_manager(mock_client=mock_client)
+    mgr.config = ContextGraphConfig(
+        entity_types=["Product', Ad", "Campaign"],
+    )
+    mgr._extract_via_ai_generate(["sess-1"])
+
+    extraction_sql = next(
+        call[0][0]
+        for call in mock_client.query.call_args_list
+        if "Entity types:" in call[0][0]
+    )
+    assert "Entity types: Product'', Ad, Campaign." in extraction_sql
+
   def test_get_property_graph_ddl(self):
     mgr = self._make_manager()
     ddl = mgr.get_property_graph_ddl()
