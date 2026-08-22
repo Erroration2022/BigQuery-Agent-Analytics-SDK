@@ -90,14 +90,21 @@ class DriftReport(BaseModel):
     return "\n".join(lines)
 
 
+# SQL fragment: extract user question from ADK content fields.
+_QUESTION_JSON_SCALAR = """\
+COALESCE(
+  JSON_EXTRACT_SCALAR(content, '$.text_summary'),
+  JSON_EXTRACT_SCALAR(content, '$.response')
+)"""
+
 # SQL: extract production questions
 _PRODUCTION_QUESTIONS_QUERY = """\
 SELECT
   session_id,
-  JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question
+  {question_scalar} AS question
 FROM `{project}.{dataset}.{table}`
 WHERE event_type = 'USER_MESSAGE_RECEIVED'
-  AND JSON_EXTRACT_SCALAR(content, '$.text_summary') IS NOT NULL
+  AND {question_scalar} IS NOT NULL
   AND {where}
 LIMIT @trace_limit
 """
@@ -122,16 +129,14 @@ WITH golden AS (
 production AS (
   SELECT
     session_id,
-    JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question,
+    {question_scalar} AS question,
     AI.EMBED(
-      JSON_EXTRACT_SCALAR(content, '$.text_summary'),
+      {question_scalar},
       endpoint => '{endpoint}'
     ).result AS embedding
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
-    AND JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) IS NOT NULL
+    AND {question_scalar} IS NOT NULL
     AND {where}
   LIMIT @trace_limit
 )
@@ -164,19 +169,17 @@ WITH golden AS (
 production AS (
   SELECT
     session_id,
-    JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question,
+    {question_scalar} AS question,
     ML.GENERATE_EMBEDDING(
       MODEL `{model}`,
       STRUCT(
-        JSON_EXTRACT_SCALAR(content, '$.text_summary')
+        {question_scalar}
         AS content
       )
     ).ml_generate_embedding_result AS embedding
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
-    AND JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) IS NOT NULL
+    AND {question_scalar} IS NOT NULL
     AND {where}
   LIMIT @trace_limit
 )
@@ -266,13 +269,11 @@ class AnalysisConfig(BaseModel):
 # SQL: frequently asked questions
 _FREQUENTLY_ASKED_QUERY = """\
 SELECT
-  JSON_EXTRACT_SCALAR(content, '$.text_summary') AS question,
+  {question_scalar} AS question,
   COUNT(*) AS frequency
 FROM `{project}.{dataset}.{table}`
 WHERE event_type = 'USER_MESSAGE_RECEIVED'
-  AND JSON_EXTRACT_SCALAR(
-    content, '$.text_summary'
-  ) IS NOT NULL
+  AND {question_scalar} IS NOT NULL
   AND {where}
 GROUP BY question
 ORDER BY frequency DESC
@@ -284,14 +285,10 @@ _FREQUENTLY_UNANSWERED_QUERY = """\
 WITH user_msgs AS (
   SELECT
     session_id,
-    JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) AS question
+    {question_scalar} AS question
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
-    AND JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) IS NOT NULL
+    AND {question_scalar} IS NOT NULL
     AND {where}
 ),
 errors AS (
@@ -318,14 +315,10 @@ LIMIT @top_k
 _AI_GENERATE_SEMANTIC_GROUPING_QUERY = """\
 WITH questions AS (
   SELECT
-    JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) AS question
+    {question_scalar} AS question
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
-    AND JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) IS NOT NULL
+    AND {question_scalar} IS NOT NULL
     AND {where}
   LIMIT @trace_limit
 )
@@ -351,14 +344,10 @@ AI.GENERATE(
 _LEGACY_SEMANTIC_GROUPING_QUERY = """\
 WITH questions AS (
   SELECT
-    JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) AS question
+    {question_scalar} AS question
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'USER_MESSAGE_RECEIVED'
-    AND JSON_EXTRACT_SCALAR(
-      content, '$.text_summary'
-    ) IS NOT NULL
+    AND {question_scalar} IS NOT NULL
     AND {where}
   LIMIT @trace_limit
 )
@@ -452,6 +441,7 @@ async def compute_drift(
       dataset=dataset_id,
       table=table_id,
       where=where_clause,
+      question_scalar=_QUESTION_JSON_SCALAR,
   )
   job_config = bigquery.QueryJobConfig(
       query_parameters=query_params,
@@ -576,6 +566,7 @@ async def _semantic_drift(
         golden_table=golden_table,
         model=embedding_model,
         where=where_clause,
+        question_scalar=_QUESTION_JSON_SCALAR,
     )
   else:
     query = _AI_EMBED_SEMANTIC_DRIFT_QUERY.format(
@@ -585,6 +576,7 @@ async def _semantic_drift(
         golden_table=golden_table,
         endpoint=embedding_model,
         where=where_clause,
+        question_scalar=_QUESTION_JSON_SCALAR,
     )
 
   job_config = bq_mod.QueryJobConfig(query_parameters=query_params)
@@ -741,6 +733,7 @@ async def _frequently_asked(
       dataset=dataset_id,
       table=table_id,
       where=where_clause,
+      question_scalar=_QUESTION_JSON_SCALAR,
   )
   job_config = bigquery.QueryJobConfig(query_parameters=params)
   job = await loop.run_in_executor(
@@ -794,6 +787,7 @@ async def _frequently_unanswered(
       dataset=dataset_id,
       table=table_id,
       where=where_clause,
+      question_scalar=_QUESTION_JSON_SCALAR,
   )
   job_config = bigquery.QueryJobConfig(query_parameters=params)
   job = await loop.run_in_executor(
@@ -881,6 +875,7 @@ async def _semantic_grouping(
             where=where_clause,
             endpoint=text_model,
             categories=categories_str,
+            question_scalar=_QUESTION_JSON_SCALAR,
         )
         job_config = bigquery.QueryJobConfig(
             query_parameters=query_params,
@@ -914,6 +909,7 @@ async def _semantic_grouping(
           where=where_clause,
           model=legacy_model,
           categories=categories_str,
+          question_scalar=_QUESTION_JSON_SCALAR,
       )
       job_config = bigquery.QueryJobConfig(
           query_parameters=query_params,
