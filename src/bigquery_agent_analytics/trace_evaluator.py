@@ -671,12 +671,16 @@ Required JSON format:
 
     # Determine overall status
     thresholds = thresholds or {}
-    passed = True
-    for metric_name, score in scores.items():
-      threshold = thresholds.get(metric_name, 0.5)
-      if score < threshold:
-        passed = False
-        details[f"{metric_name}_threshold"] = threshold
+    if not scores:
+      passed = False
+      details["eval_error"] = "No evaluation criteria produced scores"
+    else:
+      passed = True
+      for metric_name, score in scores.items():
+        threshold = thresholds.get(metric_name, 0.5)
+        if score < threshold:
+          passed = False
+          details[f"{metric_name}_threshold"] = threshold
 
     # Compute overall score as mean
     overall_score = None

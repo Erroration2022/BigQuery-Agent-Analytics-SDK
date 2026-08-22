@@ -16,7 +16,11 @@
 
 import pytest
 
+from bigquery_agent_analytics.feedback import _AI_EMBED_SEMANTIC_DRIFT_QUERY
 from bigquery_agent_analytics.feedback import _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+from bigquery_agent_analytics.feedback import _LEGACY_SEMANTIC_DRIFT_QUERY
+from bigquery_agent_analytics.feedback import _PRODUCTION_QUESTIONS_QUERY
+from bigquery_agent_analytics.feedback import _QUESTION_JSON_SCALAR
 from bigquery_agent_analytics.feedback import AnalysisConfig
 from bigquery_agent_analytics.feedback import DriftReport
 from bigquery_agent_analytics.feedback import QuestionCategory
@@ -165,3 +169,49 @@ class TestAIGenerateSemanticGroupingQuery:
 
   def test_does_not_contain_ml_generate_text(self):
     assert "ML.GENERATE_TEXT" not in _AI_GENERATE_SEMANTIC_GROUPING_QUERY
+
+
+class TestQuestionExtractionFallback:
+  """Tests for response-only user message extraction in feedback SQL."""
+
+  def test_question_scalar_coalesces_text_summary_and_response(self):
+    assert "text_summary" in _QUESTION_JSON_SCALAR
+    assert "response" in _QUESTION_JSON_SCALAR
+    assert "COALESCE" in _QUESTION_JSON_SCALAR
+
+  def test_production_questions_query_uses_question_scalar(self):
+    sql = _PRODUCTION_QUESTIONS_QUERY.format(
+        project="p",
+        dataset="d",
+        table="t",
+        where="TRUE",
+        question_scalar=_QUESTION_JSON_SCALAR,
+    )
+    assert "COALESCE" in sql
+    assert "$.response" in sql
+    assert "$.text_summary" in sql
+
+  def test_semantic_drift_query_uses_question_scalar(self):
+    sql = _AI_EMBED_SEMANTIC_DRIFT_QUERY.format(
+        project="p",
+        dataset="d",
+        table="t",
+        golden_table="golden",
+        endpoint="text-embedding-005",
+        where="TRUE",
+        question_scalar=_QUESTION_JSON_SCALAR,
+    )
+    assert sql.count("COALESCE") >= 2
+    assert "$.response" in sql
+
+  def test_legacy_semantic_drift_query_uses_question_scalar(self):
+    sql = _LEGACY_SEMANTIC_DRIFT_QUERY.format(
+        project="p",
+        dataset="d",
+        table="t",
+        golden_table="golden",
+        model="p.d.model",
+        where="TRUE",
+        question_scalar=_QUESTION_JSON_SCALAR,
+    )
+    assert "$.response" in sql
