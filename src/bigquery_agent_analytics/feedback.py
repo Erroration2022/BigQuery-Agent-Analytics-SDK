@@ -299,7 +299,7 @@ errors AS (
   FROM `{project}.{dataset}.{table}`
   WHERE (
     ENDS_WITH(event_type, '_ERROR')
-    OR error_message IS NOT NULL
+    OR NULLIF(error_message, '') IS NOT NULL
     OR status = 'ERROR'
   )
     AND {where}

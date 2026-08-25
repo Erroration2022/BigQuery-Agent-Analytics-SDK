@@ -65,14 +65,14 @@ __all__ = [
 # SQL fragment for use in BigQuery WHERE clauses.
 ERROR_SQL_PREDICATE = (
     "(ENDS_WITH(event_type, '_ERROR')"
-    " OR error_message IS NOT NULL"
+    " OR NULLIF(error_message, '') IS NOT NULL"
     " OR status = 'ERROR')"
 )
 
 # Negated version for filtering out errors.
 NO_ERROR_SQL_PREDICATE = (
     "NOT ENDS_WITH(event_type, '_ERROR')"
-    " AND error_message IS NULL"
+    " AND NULLIF(error_message, '') IS NULL"
     " AND status != 'ERROR'"
 )
 

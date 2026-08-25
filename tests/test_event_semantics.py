@@ -33,6 +33,9 @@ class TestIsErrorEvent:
   def test_error_message_set(self):
     assert is_error_event("TOOL_COMPLETED", error_message="fail") is True
 
+  def test_empty_error_message_not_error(self):
+    assert is_error_event("LLM_RESPONSE", error_message="", status="OK") is False
+
   def test_status_error(self):
     assert is_error_event("TOOL_COMPLETED", status="ERROR") is True
 

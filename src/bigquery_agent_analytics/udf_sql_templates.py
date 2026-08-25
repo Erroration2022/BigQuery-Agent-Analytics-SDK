@@ -64,7 +64,7 @@ _IS_ERROR_EVENT = _UdfSpec(
         def bqaa_is_error_event(event_type, error_message, status):
             return (
                 event_type.endswith("_ERROR")
-                or error_message is not None
+                or bool(error_message)
                 or status == "ERROR"
             )
     """

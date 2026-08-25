@@ -401,7 +401,7 @@ SELECT
   ) AS tools_used,
   COUNTIF(
     ENDS_WITH(event_type, '_ERROR')
-    OR error_message IS NOT NULL
+    OR NULLIF(error_message, '') IS NOT NULL
     OR status = 'ERROR'
   ) > 0 AS has_error,
   COUNTIF(event_type LIKE 'HITL_%') AS hitl_events,
