@@ -55,6 +55,10 @@ class TestIsErrorEvent:
   def test_error_message_present(self):
     assert is_error_event("LLM_REQUEST", error_message="oops") is True
 
+  def test_empty_error_message_not_error(self):
+    assert is_error_event("LLM_REQUEST", error_message="") is False
+    assert is_error_event("LLM_RESPONSE", error_message="", status="OK") is False
+
   def test_normal_event(self):
     assert is_error_event("LLM_REQUEST") is False
 

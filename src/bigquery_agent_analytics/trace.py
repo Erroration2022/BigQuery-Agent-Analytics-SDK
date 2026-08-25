@@ -201,7 +201,7 @@ class Span:
     """
     return (
         self.event_type.endswith("_ERROR")
-        or self.error_message is not None
+        or bool(self.error_message)
         or self.status == "ERROR"
     )
 
@@ -491,13 +491,13 @@ class TraceFilter:
     if self.has_error is True:
       conditions.append(
           "(ENDS_WITH(event_type, '_ERROR')"
-          " OR error_message IS NOT NULL"
+          " OR NULLIF(error_message, '') IS NOT NULL"
           " OR status = 'ERROR')"
       )
     elif self.has_error is False:
       conditions.append(
           "NOT ENDS_WITH(event_type, '_ERROR')"
-          " AND error_message IS NULL"
+          " AND NULLIF(error_message, '') IS NULL"
           " AND status != 'ERROR'"
       )
     if self.error_type:

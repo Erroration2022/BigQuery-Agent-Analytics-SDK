@@ -108,7 +108,7 @@ def classify_trigger_kind(
     return TRIGGER_KIND_SESSION_TERMINAL
   if event_type == "TOOL_ERROR":
     return TRIGGER_KIND_ERROR_EVENT
-  if status == "ERROR" and error_message is not None:
+  if status == "ERROR" and bool(error_message):
     return TRIGGER_KIND_ERROR_EVENT
   return None
 

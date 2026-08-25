@@ -59,7 +59,7 @@ def is_error_event(
   """
   return (
       event_type.endswith("_ERROR")
-      or error_message is not None
+      or bool(error_message)
       or status == "ERROR"
   )
 

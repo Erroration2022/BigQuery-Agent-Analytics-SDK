@@ -367,7 +367,7 @@ class TestCanonicalErrorPredicates:
     filt = TraceFilter(has_error=True)
     where, _ = filt.to_sql_conditions()
     assert "ENDS_WITH(event_type, '_ERROR')" in where
-    assert "error_message IS NOT NULL" in where
+    assert "NULLIF(error_message, '') IS NOT NULL" in where
     assert "status = 'ERROR'" in where
 
   def test_evaluator_query_uses_canonical_predicate(self):
@@ -387,7 +387,7 @@ class TestCanonicalErrorPredicates:
     from bigquery_agent_analytics.feedback import _FREQUENTLY_UNANSWERED_QUERY
 
     assert "ENDS_WITH(event_type, '_ERROR')" in _FREQUENTLY_UNANSWERED_QUERY
-    assert "error_message IS NOT NULL" in _FREQUENTLY_UNANSWERED_QUERY
+    assert "NULLIF(error_message, '') IS NOT NULL" in _FREQUENTLY_UNANSWERED_QUERY
 
 
 # ================================================================== #
@@ -792,7 +792,7 @@ class TestEventSemanticsWired:
     from bigquery_agent_analytics.event_semantics import ERROR_SQL_PREDICATE
 
     assert "ENDS_WITH(event_type, '_ERROR')" in ERROR_SQL_PREDICATE
-    assert "error_message IS NOT NULL" in ERROR_SQL_PREDICATE
+    assert "NULLIF(error_message, '') IS NOT NULL" in ERROR_SQL_PREDICATE
     assert "status = 'ERROR'" in ERROR_SQL_PREDICATE
 
   def test_response_event_types_includes_llm_response(self):
@@ -807,6 +807,7 @@ class TestEventSemanticsWired:
     assert is_error_event("TOOL_COMPLETED", "fail", "OK") is True
     assert is_error_event("AGENT_COMPLETED", None, "ERROR") is True
     assert is_error_event("TOOL_COMPLETED", None, "OK") is False
+    assert is_error_event("LLM_RESPONSE", "", "OK") is False
 
 
 # ================================================================== #
