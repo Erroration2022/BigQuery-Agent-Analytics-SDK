@@ -273,6 +273,23 @@ class TestEvaluate:
     assert filters.limit == 50
     assert filters.start_time is not None
 
+  def test_evaluate_forwards_user_id_and_has_error(self, rf):
+    client = MagicMock()
+    client.evaluate.return_value = _mock_report(2, 2)
+
+    rf.dispatch(
+        client,
+        "evaluate",
+        {
+            "metric": "error_rate",
+            "user_id": "user-42",
+            "has_error": True,
+        },
+    )
+    filters = client.evaluate.call_args[1]["filters"]
+    assert filters.user_id == "user-42"
+    assert filters.has_error is True
+
   @pytest.mark.parametrize(
       "metric",
       [

@@ -123,6 +123,8 @@ def build_filters(params):
       session_id=params.get("session_id"),
       agent_id=params.get("agent_filter"),
       last=params.get("last"),
+      user_id=params.get("user_id"),
+      has_error=params.get("has_error"),
       limit=params.get("limit", 100),
   )
 
