@@ -162,6 +162,36 @@ class TestBigQuerySessionMemory:
     assert episodes[0].user_message == "Previous question"
     assert episodes[0].agent_response == "Previous answer"
 
+  @pytest.mark.asyncio
+  async def test_get_recent_context_response_only_user_message(
+      self, session_memory, mock_client
+  ):
+    """Response-only ADK user messages should populate episode user_message."""
+    mock_results = [
+        {
+            "session_id": "sess-old-1",
+            "event_type": "USER_MESSAGE_RECEIVED",
+            "timestamp": datetime.now(timezone.utc) - timedelta(hours=2),
+            "content_summary": None,
+            "response": "book a flight to NYC",
+            "agent": "agent",
+        },
+    ]
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = mock_results
+    mock_client.query.return_value = mock_query_job
+
+    episodes = await session_memory.get_recent_context(
+        user_id="user-123",
+        current_session_id="sess-current",
+        lookback_sessions=5,
+        max_events=50,
+    )
+
+    assert len(episodes) == 1
+    assert episodes[0].user_message == "book a flight to NYC"
+
 
 class TestBigQueryEpisodicMemory:
   """Tests for BigQueryEpisodicMemory class."""
@@ -218,6 +248,34 @@ class TestBigQueryEpisodicMemory:
     )
     assert weather_episode is not None
     assert weather_episode.similarity_score > 0
+
+  @pytest.mark.asyncio
+  async def test_keyword_search_response_only_user_message(
+      self, episodic_memory, mock_client
+  ):
+    """Keyword search should match response-only ADK user messages."""
+    mock_results = [
+        {
+            "session_id": "sess-1",
+            "content": '{"response": "weather forecast sunny tomorrow"}',
+            "timestamp": datetime.now(timezone.utc),
+            "user_id": "user-123",
+            "event_type": "USER_MESSAGE_RECEIVED",
+        },
+    ]
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = mock_results
+    mock_client.query.return_value = mock_query_job
+
+    episodes = await episodic_memory.retrieve_similar_episodes(
+        query="weather forecast",
+        user_id="user-123",
+        top_k=5,
+    )
+
+    assert len(episodes) == 1
+    assert "weather" in episodes[0].user_message.lower()
 
 
 class TestContextManager:
