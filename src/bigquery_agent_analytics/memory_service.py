@@ -57,6 +57,8 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 from pydantic import Field
 
+from bigquery_agent_analytics.udf_kernels import extract_response_text_from_dict
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
@@ -246,7 +248,7 @@ class BigQuerySessionMemory:
 
       event_type = row.get("event_type")
       if event_type == "USER_MESSAGE_RECEIVED":
-        content = row.get("content_summary") or ""
+        content = row.get("response") or row.get("content_summary") or ""
         if content and not episodes[session_id].user_message:
           episodes[session_id].user_message = content
       elif event_type in ("LLM_RESPONSE", "AGENT_COMPLETED"):
@@ -404,11 +406,7 @@ class BigQueryEpisodicMemory:
         except json.JSONDecodeError:
           content = {"text": content}
 
-      user_message = ""
-      if isinstance(content, dict):
-        user_message = content.get("text_summary") or content.get("text", "")
-      else:
-        user_message = str(content) if content else ""
+      user_message = extract_response_text_from_dict(content) or ""
 
       episodes.append(
           Episode(
@@ -465,11 +463,7 @@ class BigQueryEpisodicMemory:
         except json.JSONDecodeError:
           content = {"text": content}
 
-      text = ""
-      if isinstance(content, dict):
-        text = content.get("text_summary") or content.get("text", "")
-      else:
-        text = str(content) if content else ""
+      text = extract_response_text_from_dict(content) or ""
 
       text_words = set(text.lower().split())
       if query_words and text_words:
@@ -703,7 +697,10 @@ class UserProfileBuilder:
 
   _USER_MESSAGES_QUERY = """
   SELECT
-    JSON_EXTRACT_SCALAR(content, '$.text_summary') as message,
+    COALESCE(
+      JSON_EXTRACT_SCALAR(content, '$.response'),
+      JSON_EXTRACT_SCALAR(content, '$.text_summary')
+    ) as message,
     timestamp
   FROM `{project}.{dataset}.{table}`
   WHERE user_id = @user_id
