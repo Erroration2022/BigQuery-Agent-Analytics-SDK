@@ -41,6 +41,8 @@ Example usage:
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
+from collections import deque
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
@@ -163,16 +165,19 @@ class SessionTrace:
   def extract_tool_trajectory(self) -> list[ToolCall]:
     """Extracts the tool call trajectory from events."""
     tool_calls = []
-    tool_starts: dict[str, TraceEvent] = {}
+    tool_starts: dict[str, deque[TraceEvent]] = defaultdict(deque)
 
     for event in self.events:
       if event.event_type == "TOOL_STARTING":
         tool_name = event.content.get("tool", "unknown")
-        tool_starts[event.span_id or tool_name] = event
+        tool_starts[event.span_id or tool_name].append(event)
 
       elif event.event_type == "TOOL_COMPLETED":
         tool_name = event.content.get("tool", "unknown")
-        start_event = tool_starts.pop(event.span_id or tool_name, None)
+        key = event.span_id or tool_name
+        start_event = (
+            tool_starts[key].popleft() if tool_starts[key] else None
+        )
 
         args = {}
         if start_event:
@@ -190,7 +195,10 @@ class SessionTrace:
 
       elif event.event_type == "TOOL_ERROR":
         tool_name = event.content.get("tool", "unknown")
-        start_event = tool_starts.pop(event.span_id or tool_name, None)
+        key = event.span_id or tool_name
+        start_event = (
+            tool_starts[key].popleft() if tool_starts[key] else None
+        )
 
         args = {}
         if start_event:

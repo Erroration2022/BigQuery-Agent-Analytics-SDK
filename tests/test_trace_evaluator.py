@@ -149,6 +149,58 @@ class TestSessionTrace:
     assert tool_calls[1].tool_name == "format"
     assert tool_calls[1].status == "ERROR"
 
+  def test_extract_tool_trajectory_parallel_same_tool_without_span_id(self):
+    """Parallel same-tool calls without span_id pair in FIFO order."""
+    now = datetime.now(timezone.utc)
+    events = [
+        TraceEvent(
+            event_type="TOOL_STARTING",
+            agent="agent",
+            timestamp=now,
+            content={"tool": "search", "args": {"q": "first"}},
+            attributes={},
+            span_id=None,
+        ),
+        TraceEvent(
+            event_type="TOOL_STARTING",
+            agent="agent",
+            timestamp=now,
+            content={"tool": "search", "args": {"q": "second"}},
+            attributes={},
+            span_id=None,
+        ),
+        TraceEvent(
+            event_type="TOOL_COMPLETED",
+            agent="agent",
+            timestamp=now,
+            content={"tool": "search", "result": "r1"},
+            attributes={},
+            span_id=None,
+        ),
+        TraceEvent(
+            event_type="TOOL_COMPLETED",
+            agent="agent",
+            timestamp=now,
+            content={"tool": "search", "result": "r2"},
+            attributes={},
+            span_id=None,
+        ),
+    ]
+
+    trace = SessionTrace(
+        session_id="sess-1",
+        user_id="user-1",
+        events=events,
+    )
+
+    tool_calls = trace.extract_tool_trajectory()
+
+    assert len(tool_calls) == 2
+    assert tool_calls[0].args == {"q": "first"}
+    assert tool_calls[0].result == "r1"
+    assert tool_calls[1].args == {"q": "second"}
+    assert tool_calls[1].result == "r2"
+
   def test_extract_final_response_from_agent_completed(self):
     """Test extracting final response from AGENT_COMPLETED event."""
     events = [
