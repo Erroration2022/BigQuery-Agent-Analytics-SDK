@@ -19,7 +19,7 @@ FROM AI.FORECAST(
   (
     SELECT
       TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-      AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+      AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
     FROM `my_project.agent_analytics.agent_events`
     WHERE event_type = 'LLM_RESPONSE'
       AND latency_ms IS NOT NULL
@@ -61,7 +61,7 @@ WITH ai_forecast AS (
     (
       SELECT
         TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
       FROM `my_project.agent_analytics.agent_events`
       WHERE event_type = 'LLM_RESPONSE'
         AND latency_ms IS NOT NULL

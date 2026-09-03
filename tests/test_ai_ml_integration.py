@@ -762,6 +762,12 @@ class TestAIDetectAnomaliesMigration:
         AnomalyDetector._AI_DETECT_LATENCY_ANOMALIES_QUERY
     )
     assert "data_col" in (AnomalyDetector._AI_DETECT_LATENCY_ANOMALIES_QUERY)
+    assert "JSON_VALUE" in (
+        AnomalyDetector._AI_DETECT_LATENCY_ANOMALIES_QUERY
+    )
+    assert "JSON_EXTRACT_SCALAR" not in (
+        AnomalyDetector._AI_DETECT_LATENCY_ANOMALIES_QUERY
+    )
 
   def test_legacy_detect_anomalies_preserved(self):
     """Legacy ML.DETECT_ANOMALIES template is preserved."""
@@ -880,6 +886,10 @@ class TestAIForecastMigration:
     """AI.FORECAST query template is defined."""
     assert hasattr(AnomalyDetector, "_AI_FORECAST_LATENCY_QUERY")
     assert "AI.FORECAST" in AnomalyDetector._AI_FORECAST_LATENCY_QUERY
+    assert "JSON_VALUE" in AnomalyDetector._AI_FORECAST_LATENCY_QUERY
+    assert "JSON_EXTRACT_SCALAR" not in (
+        AnomalyDetector._AI_FORECAST_LATENCY_QUERY
+    )
 
   def test_ai_forecast_query_uses_named_params(self):
     """AI.FORECAST template uses named parameter syntax."""

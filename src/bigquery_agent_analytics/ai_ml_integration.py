@@ -678,7 +678,7 @@ class AnomalyDetector:
     (
       SELECT
         TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
       FROM `{project}.{dataset}.{table}`
       WHERE event_type = 'LLM_RESPONSE'
         AND latency_ms IS NOT NULL
@@ -689,7 +689,7 @@ class AnomalyDetector:
     (
       SELECT
         TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
       FROM `{project}.{dataset}.{table}`
       WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @hours HOUR)
         AND event_type = 'LLM_RESPONSE'
@@ -712,7 +712,7 @@ class AnomalyDetector:
     (
       SELECT
         TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
       FROM `{project}.{dataset}.{table}`
       WHERE event_type = 'LLM_RESPONSE'
         AND latency_ms IS NOT NULL
@@ -740,7 +740,7 @@ class AnomalyDetector:
   ) AS
   SELECT
     TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-    AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+    AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
   FROM `{project}.{dataset}.{table}`
   WHERE event_type = 'LLM_RESPONSE'
     AND latency_ms IS NOT NULL
@@ -757,7 +757,7 @@ class AnomalyDetector:
     (
       SELECT
         TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency
       FROM `{project}.{dataset}.{table}`
       WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @hours HOUR)
         AND event_type = 'LLM_RESPONSE'
@@ -817,7 +817,7 @@ class AnomalyDetector:
         COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
         COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
         COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
-        AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
+        AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
         TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), SECOND) AS session_duration
       FROM `{project}.{dataset}.{table}`
       WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @hours HOUR)
@@ -1110,7 +1110,7 @@ class AnomalyDetector:
       COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
       COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
       COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
-      AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
+      AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
       TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), SECOND) AS session_duration
     FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`
     WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
