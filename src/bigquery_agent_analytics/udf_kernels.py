@@ -144,7 +144,7 @@ def extract_response_text(content_json: Optional[str]) -> Optional[str]:
 #   - Measured value >= threshold  →  0.0  (full penalty)
 
 
-def score_latency(avg_latency_ms: float, threshold_ms: float) -> float:
+def score_latency(avg_latency_ms: float | None, threshold_ms: float) -> float:
   """Score average latency against a threshold.
 
   Args:
@@ -154,7 +154,7 @@ def score_latency(avg_latency_ms: float, threshold_ms: float) -> float:
   Returns:
       Score between 0.0 (worst) and 1.0 (best).
   """
-  if avg_latency_ms <= 0:
+  if avg_latency_ms is None or avg_latency_ms <= 0:
     return 1.0
   if avg_latency_ms >= threshold_ms:
     return 0.0
@@ -218,7 +218,7 @@ def score_token_efficiency(total_tokens: int, max_tokens: int) -> float:
   return 1.0 - (total_tokens / max_tokens)
 
 
-def score_ttft(avg_ttft_ms: float, threshold_ms: float) -> float:
+def score_ttft(avg_ttft_ms: float | None, threshold_ms: float) -> float:
   """Score average time-to-first-token against a threshold.
 
   Args:
@@ -228,7 +228,7 @@ def score_ttft(avg_ttft_ms: float, threshold_ms: float) -> float:
   Returns:
       Score between 0.0 (worst) and 1.0 (best).
   """
-  if avg_ttft_ms <= 0:
+  if avg_ttft_ms is None or avg_ttft_ms <= 0:
     return 1.0
   if avg_ttft_ms >= threshold_ms:
     return 0.0

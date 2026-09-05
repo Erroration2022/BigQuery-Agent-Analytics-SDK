@@ -157,6 +157,9 @@ class TestScoreLatency:
   def test_quarter_threshold(self):
     assert score_latency(1250, 5000) == pytest.approx(0.75)
 
+  def test_null_avg_latency_from_bigquery_avg(self):
+    assert score_latency(None, 5000) == 1.0
+
 
 class TestScoreErrorRate:
 
@@ -228,6 +231,9 @@ class TestScoreTtft:
 
   def test_half_threshold(self):
     assert score_ttft(500, 1000) == pytest.approx(0.5)
+
+  def test_null_avg_ttft_from_bigquery_avg(self):
+    assert score_ttft(None, 1000) == 1.0
 
 
 class TestScoreCost:

@@ -220,6 +220,21 @@ class TestHelpers:
     assert evaluator.name == STREAMING_EVALUATOR_PROFILE
     assert metric_names == ["latency", "error_rate", "turn_count"]
 
+  def test_streaming_profile_handles_null_avg_latency(self):
+    evaluator = build_streaming_observability_evaluator()
+    score = evaluator.evaluate_session(
+        {
+            "session_id": "tool-only-session",
+            "avg_latency_ms": None,
+            "tool_calls": 1,
+            "tool_errors": 0,
+            "turn_count": 1,
+        }
+    )
+
+    assert score.passed is True
+    assert score.scores["latency"] == 1.0
+
   def test_dedupe_key_is_stable(self):
     first = build_trigger_dedupe_key(
         session_id="sess-1",
