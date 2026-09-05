@@ -134,7 +134,7 @@ _SCORE_LATENCY = _UdfSpec(
     body=textwrap.dedent(
         """\
         def bqaa_score_latency(avg_latency_ms, threshold_ms):
-            if avg_latency_ms <= 0:
+            if avg_latency_ms is None or avg_latency_ms <= 0:
                 return 1.0
             if avg_latency_ms >= threshold_ms:
                 return 0.0
@@ -205,7 +205,7 @@ _SCORE_TTFT = _UdfSpec(
     body=textwrap.dedent(
         """\
         def bqaa_score_ttft(avg_ttft_ms, threshold_ms):
-            if avg_ttft_ms <= 0:
+            if avg_ttft_ms is None or avg_ttft_ms <= 0:
                 return 1.0
             if avg_ttft_ms >= threshold_ms:
                 return 0.0
@@ -295,7 +295,7 @@ _EVAL_SUMMARY_JSON = _UdfSpec(
         import json
 
         def _score_latency(avg, thresh):
-            if avg <= 0:
+            if avg is None or avg <= 0:
                 return 1.0
             if avg >= thresh:
                 return 0.0
@@ -324,7 +324,7 @@ _EVAL_SUMMARY_JSON = _UdfSpec(
             return 1.0 - (tokens / max_t)
 
         def _score_ttft(avg, thresh):
-            if avg <= 0:
+            if avg is None or avg <= 0:
                 return 1.0
             if avg >= thresh:
                 return 0.0
