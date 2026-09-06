@@ -540,6 +540,22 @@ class TestBatchEvaluator:
     assert "Failed to parse" in results[0].error
 
   @pytest.mark.asyncio
+  async def test_batch_query_includes_llm_response_and_content_fallback(
+      self, evaluator, mock_client
+  ):
+    """Trace aggregation should include LLM_RESPONSE and response/tool text."""
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = []
+    mock_client.query.return_value = mock_query_job
+
+    await evaluator.evaluate_recent_sessions(days=1, limit=10)
+
+    sql = mock_client.query.call_args[0][0]
+    assert "'LLM_RESPONSE'" in sql
+    assert "$.response" in sql
+    assert "$.tool" in sql
+
+  @pytest.mark.asyncio
   async def test_store_evaluation_results(self, evaluator, mock_client):
     """Test storing evaluation results."""
     mock_client.insert_rows_json.return_value = []
