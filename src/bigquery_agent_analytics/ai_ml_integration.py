@@ -1239,7 +1239,14 @@ class BatchEvaluator:
           COALESCE(
             JSON_EXTRACT_SCALAR(
               content, '$.text_summary'
-            ), ''
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.response'
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.tool'
+            ),
+            ''
           )
         ),
         '\\n' ORDER BY timestamp
@@ -1250,6 +1257,7 @@ class BatchEvaluator:
     )
       AND event_type IN (
         'USER_MESSAGE_RECEIVED',
+        'LLM_RESPONSE',
         'TOOL_STARTING',
         'TOOL_COMPLETED',
         'AGENT_COMPLETED'
@@ -1287,7 +1295,14 @@ class BatchEvaluator:
           COALESCE(
             JSON_EXTRACT_SCALAR(
               content, '$.text_summary'
-            ), ''
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.response'
+            ),
+            JSON_EXTRACT_SCALAR(
+              content, '$.tool'
+            ),
+            ''
           )
         ),
         '\\n' ORDER BY timestamp
@@ -1298,6 +1313,7 @@ class BatchEvaluator:
     )
       AND event_type IN (
         'USER_MESSAGE_RECEIVED',
+        'LLM_RESPONSE',
         'TOOL_STARTING',
         'TOOL_COMPLETED',
         'AGENT_COMPLETED'
