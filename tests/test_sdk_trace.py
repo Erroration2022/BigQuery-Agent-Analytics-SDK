@@ -494,6 +494,33 @@ class TestTraceFilter:
     assert "status = 'ERROR'" in where
     assert "user_id = @user_id" in where
 
+  def test_session_event_conditions_applies_time_bounds(self):
+    filt = TraceFilter(
+        start_time=datetime(2024, 6, 1, tzinfo=timezone.utc),
+        end_time=datetime(2024, 6, 30, tzinfo=timezone.utc),
+    )
+    where, params = filt.to_session_event_conditions(["sess-a"])
+    assert "session_id IN UNNEST(@facet_session_ids)" in where
+    assert "timestamp >= @start_time" in where
+    assert "timestamp <= @end_time" in where
+    param_names = {p.name for p in params}
+    assert "facet_session_ids" in param_names
+    assert "start_time" in param_names
+    assert "end_time" in param_names
+    assert "trace_limit" not in param_names
+
+  def test_session_event_conditions_replaces_session_ids_filter(self):
+    filt = TraceFilter(session_ids=["old-1", "old-2"])
+    where, params = filt.to_session_event_conditions(["new-1"])
+    assert "session_id IN UNNEST(@session_ids)" not in where
+    assert "session_id IN UNNEST(@facet_session_ids)" in where
+    session_params = [
+        p for p in params if p.name in ("session_ids", "facet_session_ids")
+    ]
+    assert len(session_params) == 1
+    assert session_params[0].name == "facet_session_ids"
+    assert session_params[0].values == ["new-1"]
+
 
 class TestSpanErrorVisibility:
   """Tests for error propagation on Span."""

@@ -1619,11 +1619,13 @@ class Client:
       return InsightsReport(config=cfg)
 
     session_ids = [m.session_id for m in metadata_list]
+    event_where, event_params = filt.to_session_event_conditions(session_ids)
 
     # Step 2: Extract facets
     facets = await self._extract_facets(
         table,
-        session_ids,
+        event_where,
+        event_params,
         model,
     )
 
@@ -1734,7 +1736,8 @@ class Client:
   async def _extract_facets(
       self,
       table: str,
-      session_ids: list[str],
+      event_where: str,
+      event_params: list,
       text_model: str,
   ) -> list[SessionFacet]:
     """Extracts facets via AI.GENERATE, BQML, or API fallback."""
@@ -1743,7 +1746,8 @@ class Client:
       try:
         return await self._extract_facets_ai_generate(
             table,
-            session_ids,
+            event_where,
+            event_params,
         )
       except Exception as e:
         logger.debug(
@@ -1755,7 +1759,8 @@ class Client:
     try:
       return await self._extract_facets_bqml(
           table,
-          session_ids,
+          event_where,
+          event_params,
           text_model,
       )
     except Exception as e:
@@ -1767,14 +1772,16 @@ class Client:
     # Fallback: fetch transcripts, extract via API
     transcripts = await self._fetch_transcripts(
         table,
-        session_ids,
+        event_where,
+        event_params,
     )
     return await extract_facets_via_api(transcripts)
 
   async def _extract_facets_ai_generate(
       self,
       table: str,
-      session_ids: list[str],
+      event_where: str,
+      event_params: list,
   ) -> list[SessionFacet]:
     """Extracts facets using AI.GENERATE with typed output."""
     from google.cloud import bigquery as bq
@@ -1787,14 +1794,10 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         endpoint=self.endpoint,
+        event_where=event_where,
     )
     job_config = bq.QueryJobConfig(
-        query_parameters=[
-            bq.ArrayQueryParameter(
-                "session_ids",
-                "STRING",
-                session_ids,
-            ),
+        query_parameters=list(event_params) + [
             bq.ScalarQueryParameter(
                 "facet_prompt",
                 "STRING",
@@ -1822,7 +1825,8 @@ class Client:
   async def _extract_facets_bqml(
       self,
       table: str,
-      session_ids: list[str],
+      event_where: str,
+      event_params: list,
       text_model: str,
   ) -> list[SessionFacet]:
     """Extracts facets using legacy ML.GENERATE_TEXT."""
@@ -1836,14 +1840,10 @@ class Client:
         dataset=self.dataset_id,
         table=table,
         model=text_model,
+        event_where=event_where,
     )
     job_config = bq.QueryJobConfig(
-        query_parameters=[
-            bq.ArrayQueryParameter(
-                "session_ids",
-                "STRING",
-                session_ids,
-            ),
+        query_parameters=list(event_params) + [
             bq.ScalarQueryParameter(
                 "facet_prompt",
                 "STRING",
@@ -1872,7 +1872,8 @@ class Client:
   async def _fetch_transcripts(
       self,
       table: str,
-      session_ids: list[str],
+      event_where: str,
+      event_params: list,
   ) -> dict[str, str]:
     """Fetches session transcripts from BigQuery."""
     from google.cloud import bigquery as bq
@@ -1883,15 +1884,10 @@ class Client:
         project=self.project_id,
         dataset=self.dataset_id,
         table=table,
+        event_where=event_where,
     )
     job_config = bq.QueryJobConfig(
-        query_parameters=[
-            bq.ArrayQueryParameter(
-                "session_ids",
-                "STRING",
-                session_ids,
-            ),
-        ],
+        query_parameters=list(event_params),
     )
 
     job = await loop.run_in_executor(
