@@ -596,6 +596,47 @@ class TraceFilter:
     where = " AND ".join(conditions) if conditions else "TRUE"
     return where, params
 
+  def to_session_event_conditions(
+      self,
+      session_ids: list[str],
+      *,
+      session_param: str = "facet_session_ids",
+  ) -> tuple[str, list]:
+    """Event-level WHERE for queries scoped to specific session IDs.
+
+    Applies the same row-level filters as :meth:`to_sql_conditions` but
+    replaces any ``session_ids`` filter with the provided session list.
+    Omits ``trace_limit``, which is only used by session rollups.
+
+    Args:
+        session_ids: Session IDs to include.
+        session_param: Query parameter name for the session ID array.
+
+    Returns:
+        Tuple of (SQL conditions string, list of BQ query params).
+    """
+    from google.cloud import bigquery
+
+    where, params = self.to_sql_conditions()
+    params = [
+        p
+        for p in params
+        if getattr(p, "name", None) not in ("session_ids", "trace_limit")
+    ]
+    parts = [
+        part
+        for part in where.split(" AND ")
+        if part != "session_id IN UNNEST(@session_ids)"
+    ]
+    event_where = " AND ".join(parts) if parts else "TRUE"
+    params.append(
+        bigquery.ArrayQueryParameter(session_param, "STRING", session_ids)
+    )
+    combined = (
+        f"session_id IN UNNEST(@{session_param}) AND ({event_where})"
+    )
+    return combined, params
+
 
 @dataclass
 class Trace:

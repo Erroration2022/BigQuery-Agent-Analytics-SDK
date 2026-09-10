@@ -442,7 +442,7 @@ SELECT
     LIMIT 1
   )[SAFE_OFFSET(0)] AS final_response
 FROM `{project}.{dataset}.{table}`
-WHERE session_id IN UNNEST(@session_ids)
+WHERE {event_where}
 GROUP BY session_id
 """
 
@@ -465,7 +465,7 @@ WITH transcripts AS (
       '\\n' ORDER BY timestamp
     ) AS transcript
   FROM `{project}.{dataset}.{table}`
-  WHERE session_id IN UNNEST(@session_ids)
+  WHERE {event_where}
   GROUP BY session_id
 )
 SELECT
@@ -522,7 +522,7 @@ WITH transcripts AS (
       '\\n' ORDER BY timestamp
     ) AS transcript
   FROM `{project}.{dataset}.{table}`
-  WHERE session_id IN UNNEST(@session_ids)
+  WHERE {event_where}
   GROUP BY session_id
 )
 SELECT

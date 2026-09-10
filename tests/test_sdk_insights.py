@@ -846,6 +846,14 @@ class TestAIGenerateTemplates:
   def test_facet_query_contains_endpoint(self):
     assert "{endpoint}" in _AI_GENERATE_FACET_EXTRACTION_QUERY
 
+  def test_facet_query_scopes_events_to_filter(self):
+    assert "{event_where}" in _AI_GENERATE_FACET_EXTRACTION_QUERY
+
+  def test_transcript_query_scopes_events_to_filter(self):
+    from bigquery_agent_analytics.insights import _SESSION_TRANSCRIPT_QUERY
+
+    assert "{event_where}" in _SESSION_TRANSCRIPT_QUERY
+
   def test_analysis_query_contains_ai_generate(self):
     assert "AI.GENERATE" in _AI_GENERATE_ANALYSIS_QUERY
 
