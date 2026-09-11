@@ -252,6 +252,29 @@ class TestClientListTraces:
     # Verify query was called
     mock_bq.query.assert_called_once()
 
+  def test_list_traces_scopes_returned_events(self):
+    mock_bq = _mock_bq_client()
+    mock_job = MagicMock()
+    mock_job.result.return_value = []
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+    )
+    filt = TraceFilter(
+        start_time=datetime(2024, 6, 1, tzinfo=timezone.utc),
+        agent_id="my_agent",
+    )
+    client.list_traces(filter_criteria=filt)
+
+    query_str = mock_bq.query.call_args[0][0]
+    assert query_str.count("timestamp >= @start_time") == 2
+    assert query_str.count("agent = @agent_id") == 2
+    assert "WHERE {event_where}" not in query_str
+
 
 class TestClientEvaluate:
   """Tests for Client.evaluate()."""
@@ -670,18 +693,20 @@ class TestApiJudgeUsesTableParams:
     from bigquery_agent_analytics.evaluators import LLMAsJudge
 
     evaluator = LLMAsJudge.correctness()
+    filt = TraceFilter(agent_id="my_agent")
     report = client._api_judge(
         evaluator,
         "custom_table",
-        "agent = 'my_agent'",
+        "agent = @agent_id",
         [],
+        trace_filter=filt,
     )
 
-    # Verify the query used the custom table
+    # Verify the query used the custom table and event scoping
     call_args = mock_bq.query.call_args
     query_str = call_args[0][0]
     assert "custom_table" in query_str
-    assert "my_agent" in query_str
+    assert query_str.count("agent = @agent_id") == 2
     assert report.total_sessions == 0
 
 

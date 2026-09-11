@@ -596,6 +596,37 @@ class TraceFilter:
     where = " AND ".join(conditions) if conditions else "TRUE"
     return where, params
 
+  def to_event_level_sql_conditions(self) -> tuple[str, list]:
+    """Event-level WHERE for queries that return individual rows.
+
+    Applies the same filters as :meth:`to_sql_conditions` but omits
+    session-level selectors such as ``has_error``.  Those filters are
+    used to pick sessions while event-level filters scope the returned
+    events (e.g. time windows, agent_id).
+
+    Omits ``trace_limit``, which applies only to session selection.
+
+    Returns:
+        Tuple of (SQL conditions string, list of BQ query params).
+    """
+    where, params = self.to_sql_conditions()
+    session_level_parts = {
+        "(ENDS_WITH(event_type, '_ERROR')"
+        " OR error_message IS NOT NULL"
+        " OR status = 'ERROR')",
+        "NOT ENDS_WITH(event_type, '_ERROR')"
+        " AND error_message IS NULL"
+        " AND status != 'ERROR'",
+    }
+    parts = [
+        part for part in where.split(" AND ") if part not in session_level_parts
+    ]
+    event_where = " AND ".join(parts) if parts else "TRUE"
+    event_params = [
+        p for p in params if getattr(p, "name", None) != "trace_limit"
+    ]
+    return event_where, event_params
+
 
 @dataclass
 class Trace:

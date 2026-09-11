@@ -494,6 +494,33 @@ class TestTraceFilter:
     assert "status = 'ERROR'" in where
     assert "user_id = @user_id" in where
 
+  def test_event_level_conditions_exclude_has_error(self):
+    filt = TraceFilter(
+        agent_id="agent",
+        has_error=True,
+        user_id="user-1",
+    )
+    where, params = filt.to_event_level_sql_conditions()
+    assert "agent = @agent_id" in where
+    assert "user_id = @user_id" in where
+    assert "status = 'ERROR'" not in where
+    assert "trace_limit" not in {p.name for p in params}
+
+  def test_event_level_conditions_keep_time_bounds(self):
+    filt = TraceFilter(
+        start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        has_error=True,
+    )
+    where, params = filt.to_event_level_sql_conditions()
+    assert "timestamp >= @start_time" in where
+    assert "timestamp <= @end_time" in where
+    assert "status = 'ERROR'" not in where
+    param_names = {p.name for p in params}
+    assert "start_time" in param_names
+    assert "end_time" in param_names
+    assert "trace_limit" not in param_names
+
 
 class TestSpanErrorVisibility:
   """Tests for error propagation on Span."""
