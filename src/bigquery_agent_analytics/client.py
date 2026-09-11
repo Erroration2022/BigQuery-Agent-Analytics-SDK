@@ -136,7 +136,7 @@ _LIST_TRACES_QUERY = """\
 WITH trace_sessions AS (
   SELECT DISTINCT session_id
   FROM `{project}.{dataset}.{table}`
-  WHERE {where}
+  WHERE {session_where}
   LIMIT @trace_limit
 )
 SELECT
@@ -158,6 +158,7 @@ SELECT
   e.is_truncated
 FROM `{project}.{dataset}.{table}` e
 JOIN trace_sessions ts ON e.session_id = ts.session_id
+WHERE {event_where}
 ORDER BY e.session_id, e.timestamp ASC
 """
 
@@ -787,13 +788,15 @@ class Client:
         List of Trace objects, one per session.
     """
     filt = filter_criteria or TraceFilter()
-    where, params = filt.to_sql_conditions()
+    session_where, params = filt.to_sql_conditions()
+    event_where, _ = filt.to_event_level_sql_conditions()
 
     query = _LIST_TRACES_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,
-        where=where,
+        session_where=session_where,
+        event_where=event_where,
     )
     job_config = bigquery.QueryJobConfig(
         query_parameters=params,
@@ -981,7 +984,13 @@ class Client:
       )
 
     # Fallback: fetch traces using same table/filter, evaluate via API
-    return self._api_judge(evaluator, table, where, params)
+    return self._api_judge(
+        evaluator,
+        table,
+        where,
+        params,
+        trace_filter=trace_filter,
+    )
 
   def _ai_generate_judge(
       self,
@@ -1120,6 +1129,7 @@ class Client:
       table,
       where,
       params,
+      trace_filter: Optional[TraceFilter] = None,
   ) -> EvaluationReport:
     """Evaluates using the Gemini API (fallback).
 
@@ -1127,11 +1137,15 @@ class Client:
     evaluation paths, then evaluates each session via the
     Gemini API.
     """
+    filt = trace_filter or TraceFilter()
+    event_where, _ = filt.to_event_level_sql_conditions()
+
     query = _LIST_TRACES_QUERY.format(
         project=self.project_id,
         dataset=self.dataset_id,
         table=table,
-        where=where,
+        session_where=where,
+        event_where=event_where,
     )
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     results = list(self.bq_client.query(query, job_config=job_config).result())
