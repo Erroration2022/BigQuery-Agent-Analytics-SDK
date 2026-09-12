@@ -39,6 +39,7 @@ STREAMING_RUNS_TABLE = "_streaming_eval_runs"
 DEFAULT_POLL_INTERVAL_MINUTES = 5
 DEFAULT_OVERLAP_MINUTES = 15
 DEFAULT_INITIAL_LOOKBACK_MINUTES = 30
+DEFAULT_MAX_SCAN_WINDOW_MINUTES = 60
 
 TRIGGER_KIND_SESSION_TERMINAL = "session_terminal"
 TRIGGER_KIND_ERROR_EVENT = "error_event"
@@ -262,6 +263,35 @@ def compute_scan_start(
   if checkpoint > run_started:
     checkpoint = run_started
   return checkpoint - overlap_window
+
+
+def compute_scan_window(
+    run_started_at: datetime | str,
+    checkpoint_timestamp: datetime | str | None = None,
+    overlap: timedelta | None = None,
+    initial_lookback: timedelta | None = None,
+    max_scan_window: timedelta | None = None,
+) -> tuple[datetime, datetime]:
+  """Compute bounded scan bounds for the next overlap scan.
+
+  When the checkpoint is stale (for example after repeated failed runs),
+  cap ``scan_end`` so each invocation processes at most ``max_scan_window``
+  of events instead of scanning an unbounded catch-up range.
+  """
+  run_started = _coerce_timestamp(run_started_at)
+  scan_start = compute_scan_start(
+      run_started_at=run_started,
+      checkpoint_timestamp=checkpoint_timestamp,
+      overlap=overlap,
+      initial_lookback=initial_lookback,
+  )
+  scan_end = run_started
+  max_window = max_scan_window or timedelta(
+      minutes=DEFAULT_MAX_SCAN_WINDOW_MINUTES
+  )
+  if scan_end - scan_start > max_window:
+    scan_end = scan_start + max_window
+  return scan_start, scan_end
 
 
 def _coerce_timestamp(value: datetime | str) -> datetime:
