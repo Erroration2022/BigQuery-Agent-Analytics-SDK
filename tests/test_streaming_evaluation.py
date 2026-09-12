@@ -33,6 +33,7 @@ from bigquery_agent_analytics._streaming_evaluation import build_streaming_obser
 from bigquery_agent_analytics._streaming_evaluation import build_trigger_dedupe_key
 from bigquery_agent_analytics._streaming_evaluation import classify_trigger_kind
 from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
+from bigquery_agent_analytics._streaming_evaluation import compute_scan_window
 from bigquery_agent_analytics._streaming_evaluation import parse_trigger_payload
 from bigquery_agent_analytics._streaming_evaluation import parse_trigger_row
 from bigquery_agent_analytics._streaming_evaluation import serialize_streaming_result_row
@@ -286,6 +287,34 @@ class TestHelpers:
         initial_lookback=timedelta(minutes=30),
     )
     assert scan_start == _NOW - timedelta(minutes=30)
+
+  def test_compute_scan_window_caps_stale_checkpoint_catchup(self):
+    stale_checkpoint = _NOW - timedelta(days=2)
+    scan_start, scan_end = compute_scan_window(
+        run_started_at=_NOW,
+        checkpoint_timestamp=stale_checkpoint,
+        overlap=timedelta(minutes=15),
+        initial_lookback=timedelta(minutes=30),
+        max_scan_window=timedelta(hours=1),
+    )
+
+    assert scan_start == stale_checkpoint - timedelta(minutes=15)
+    assert scan_end == scan_start + timedelta(hours=1)
+    assert scan_end < _NOW
+
+  def test_compute_scan_window_uses_run_started_when_checkpoint_is_current(
+      self,
+  ):
+    scan_start, scan_end = compute_scan_window(
+        run_started_at=_NOW,
+        checkpoint_timestamp=_NOW - timedelta(minutes=5),
+        overlap=timedelta(minutes=15),
+        initial_lookback=timedelta(minutes=30),
+        max_scan_window=timedelta(hours=1),
+    )
+
+    assert scan_start == _NOW - timedelta(minutes=20)
+    assert scan_end == _NOW
 
   def test_serialize_result_row_uses_session_scores(self):
     trigger = parse_trigger_payload(
@@ -752,6 +781,65 @@ class TestWorker:
         "error_event",
         "session_terminal",
     ]
+
+  def test_stale_checkpoint_scan_is_capped_and_advances_partially(
+      self,
+      streaming_worker,
+      monkeypatch,
+  ):
+    stale_checkpoint = _NOW - timedelta(days=2)
+    fake_bq = _FakeBigQueryClient(
+        checkpoint_rows=[{"checkpoint_timestamp": stale_checkpoint}],
+        trigger_rows=[
+            {
+                "session_id": "sess-1",
+                "trace_id": "trace-1",
+                "span_id": "span-1",
+                "event_type": "AGENT_COMPLETED",
+                "status": "OK",
+                "error_message": None,
+                "trigger_timestamp": stale_checkpoint + timedelta(minutes=10),
+                "trigger_kind": "session_terminal",
+            }
+        ],
+    )
+    client = MagicMock()
+    client.project_id = "proj"
+    client.dataset_id = "agent_trace"
+    client.table_id = "agent_events"
+    client.bq_client = fake_bq
+    client.evaluate.return_value = _report()
+    monkeypatch.setattr(
+        streaming_worker,
+        "build_client_from_context",
+        MagicMock(return_value=client),
+    )
+
+    response, status = streaming_worker.handle_scheduled_run({}, now=_NOW)
+
+    assert status == 200
+    trigger_scan_config = fake_bq.job_configs[1]
+    scan_params = {
+        param.name: param.value
+        for param in trigger_scan_config.query_parameters
+    }
+    expected_scan_start = stale_checkpoint - timedelta(minutes=15)
+    assert scan_params["scan_start"] == expected_scan_start
+    assert scan_params["scan_end"] == expected_scan_start + timedelta(hours=1)
+    assert scan_params["scan_end"] < _NOW
+
+    state_params = None
+    for query, job_config in zip(fake_bq.queries, fake_bq.job_configs):
+      if (
+          "_streaming_eval_state" in query
+          and "checkpoint_timestamp = S.checkpoint_timestamp" in query
+      ):
+        state_params = {
+            param.name: param.value for param in job_config.query_parameters
+        }
+
+    assert state_params is not None
+    assert state_params["checkpoint_timestamp"] == scan_params["scan_end"]
 
   def test_invalid_overlap_env_uses_default(
       self,

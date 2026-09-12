@@ -36,8 +36,9 @@ from bigquery_agent_analytics import TraceFilter
 from bigquery_agent_analytics._deploy_runtime import build_client_from_context
 from bigquery_agent_analytics._deploy_runtime import resolve_client_options
 from bigquery_agent_analytics._streaming_evaluation import build_streaming_observability_evaluator
-from bigquery_agent_analytics._streaming_evaluation import compute_scan_start
+from bigquery_agent_analytics._streaming_evaluation import compute_scan_window
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_INITIAL_LOOKBACK_MINUTES
+from bigquery_agent_analytics._streaming_evaluation import DEFAULT_MAX_SCAN_WINDOW_MINUTES
 from bigquery_agent_analytics._streaming_evaluation import DEFAULT_OVERLAP_MINUTES
 from bigquery_agent_analytics._streaming_evaluation import parse_trigger_row
 from bigquery_agent_analytics._streaming_evaluation import serialize_streaming_result_row
@@ -242,6 +243,7 @@ class RuntimeConfig:
   processor_name: str
   overlap: timedelta
   initial_lookback: timedelta
+  max_scan_window: timedelta
 
 
 @dataclass
@@ -266,6 +268,7 @@ def handle_scheduled_run(
   client = None
   config = None
   scan_start = None
+  scan_end = None
   stats = RunStats()
   success_run_finalized = False
 
@@ -273,15 +276,16 @@ def handle_scheduled_run(
     client = build_client_from_context({})
     config = load_runtime_config(client)
     checkpoint_timestamp = load_checkpoint(client, config)
-    scan_start = compute_scan_start(
+    scan_start, scan_end = compute_scan_window(
         run_started_at=run_started_at,
         checkpoint_timestamp=checkpoint_timestamp,
         overlap=config.overlap,
         initial_lookback=config.initial_lookback,
+        max_scan_window=config.max_scan_window,
     )
     evaluator = build_streaming_observability_evaluator()
 
-    for trigger in iter_triggers(client, config, scan_start, run_started_at):
+    for trigger in iter_triggers(client, config, scan_start, scan_end):
       stats.trigger_rows_found += 1
       if isinstance(trigger, _IgnoredTrigger):
         stats.ignored_rows += 1
@@ -319,12 +323,12 @@ def handle_scheduled_run(
         run_started_at=run_started_at,
         run_finished_at=datetime.now(timezone.utc),
         scan_start=scan_start,
-        scan_end=run_started_at,
+        scan_end=scan_end,
         stats=stats,
         status="success",
         error_message=None,
     )
-    update_checkpoint(client, config, run_started_at)
+    update_checkpoint(client, config, scan_end)
     success_run_finalized = True
   except Exception as exc:  # pragma: no cover - exercised in tests
     logger.exception("Scheduled streaming evaluation run failed")
@@ -349,7 +353,7 @@ def handle_scheduled_run(
       "status": "processed",
       "processor_name": config.processor_name,
       "scan_start": scan_start.isoformat(),
-      "scan_end": run_started_at.isoformat(),
+      "scan_end": scan_end.isoformat(),
       "trigger_rows_found": stats.trigger_rows_found,
       "processed_rows": stats.processed_rows,
       "duplicate_rows": stats.duplicate_rows,
@@ -385,6 +389,10 @@ def load_runtime_config(client) -> RuntimeConfig:
       "BQ_AGENT_INITIAL_LOOKBACK_MINUTES",
       DEFAULT_INITIAL_LOOKBACK_MINUTES,
   )
+  max_scan_window_minutes = _env_int(
+      "BQ_AGENT_MAX_SCAN_WINDOW_MINUTES",
+      DEFAULT_MAX_SCAN_WINDOW_MINUTES,
+  )
 
   return RuntimeConfig(
       source_project=source_project,
@@ -405,6 +413,7 @@ def load_runtime_config(client) -> RuntimeConfig:
       ),
       overlap=timedelta(minutes=overlap_minutes),
       initial_lookback=timedelta(minutes=initial_lookback_minutes),
+      max_scan_window=timedelta(minutes=max_scan_window_minutes),
   )
 
 
