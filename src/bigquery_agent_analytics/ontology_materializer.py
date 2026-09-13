@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from google.cloud import bigquery
 
@@ -198,6 +198,39 @@ def compile_relationship_ddl(
 # ------------------------------------------------------------------ #
 # Routing: ExtractedGraph -> row dicts                                 #
 # ------------------------------------------------------------------ #
+
+
+def _is_nonempty_key_value(value: Any) -> bool:
+  """Return True when a primary/foreign key value is present."""
+  if value is None:
+    return False
+  if isinstance(value, str):
+    return bool(value.strip())
+  return True
+
+
+def _node_row_is_valid(row: dict, entity_spec: EntitySpec) -> bool:
+  """Return True when a node row contains all required primary key columns."""
+  return all(
+      _is_nonempty_key_value(row.get(col))
+      for col in entity_spec.keys.primary
+  )
+
+
+def _edge_row_is_valid(
+    row: dict,
+    rel: RelationshipSpec,
+    spec: GraphSpec,
+) -> bool:
+  """Return True when an edge row contains all required foreign key columns."""
+  entity_map = {e.name: e for e in spec.entities}
+  src = entity_map[rel.from_entity]
+  tgt = entity_map[rel.to_entity]
+  from_cols = rel.binding.from_columns or src.keys.primary
+  to_cols = rel.binding.to_columns or tgt.keys.primary
+  return all(
+      _is_nonempty_key_value(row.get(col)) for col in from_cols + to_cols
+  )
 
 
 def _route_node(
@@ -515,6 +548,13 @@ class OntologyMaterializer:
       parts = node.node_id.split(":")
       sid = parts[0] if parts else default_session_id
       row = _route_node(node, entity, sid)
+      if not _node_row_is_valid(row, entity):
+        logger.warning(
+            "Skipping node %r with missing primary keys %s",
+            node.node_id,
+            entity.keys.primary,
+        )
+        continue
       table_rows.setdefault(table_ref, []).append(row)
       name_counts[node.entity_name] = name_counts.get(node.entity_name, 0) + 1
 
@@ -531,6 +571,12 @@ class OntologyMaterializer:
       parts = edge.from_node_id.split(":")
       sid = parts[0] if parts else default_session_id
       row = _route_edge(edge, rel, self.spec, sid)
+      if not _edge_row_is_valid(row, rel, self.spec):
+        logger.warning(
+            "Skipping edge %r with missing foreign keys",
+            edge.edge_id,
+        )
+        continue
       table_rows.setdefault(table_ref, []).append(row)
       name_counts[edge.relationship_name] = (
           name_counts.get(edge.relationship_name, 0) + 1
@@ -539,7 +585,16 @@ class OntologyMaterializer:
     # One delete + one insert per physical table.
     inserted_tables: set[str] = set()
     for table_ref, rows in table_rows.items():
-      self._delete_for_sessions(table_ref, session_ids)
+      replacement_session_ids = sorted(
+          {
+              row["session_id"]
+              for row in rows
+              if row.get("session_id")
+          }
+      )
+      if not replacement_session_ids:
+        continue
+      self._delete_for_sessions(table_ref, replacement_session_ids)
       try:
         errors = self.bq_client.insert_rows_json(table_ref, rows)
         if errors:
