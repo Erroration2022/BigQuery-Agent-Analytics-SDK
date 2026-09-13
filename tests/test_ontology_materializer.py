@@ -23,6 +23,8 @@ from unittest.mock import patch
 import pytest
 
 from bigquery_agent_analytics.ontology_materializer import _ddl_type
+from bigquery_agent_analytics.ontology_materializer import _edge_row_is_valid
+from bigquery_agent_analytics.ontology_materializer import _node_row_is_valid
 from bigquery_agent_analytics.ontology_materializer import _parse_key_segment
 from bigquery_agent_analytics.ontology_materializer import _route_edge
 from bigquery_agent_analytics.ontology_materializer import _route_node
@@ -970,3 +972,115 @@ class TestMaterialize:
     result = mat.materialize(self._make_graph(), session_ids=["sess1"])
     # No entries in result because inserts failed.
     assert result == {}
+
+  def test_missing_primary_key_nodes_skipped_without_delete(self):
+    """Malformed AI output must not wipe existing rows via delete-then-insert."""
+    graph = ExtractedGraph(
+        name="test",
+        nodes=[
+            ExtractedNode(
+                node_id="sess1:Alpha:0",
+                entity_name="Alpha",
+                labels=["Alpha"],
+                properties=[
+                    ExtractedProperty(name="score", value=0.9),
+                ],
+            ),
+        ],
+    )
+    mock_client = _mock_bq_client()
+    mat = OntologyMaterializer(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        bq_client=mock_client,
+    )
+    result = mat.materialize(graph, session_ids=["sess1"])
+    assert result == {}
+    mock_client.query.assert_not_called()
+    mock_client.insert_rows_json.assert_not_called()
+
+  def test_missing_foreign_key_edges_skipped_without_delete(self):
+    """Edges with empty from_keys/to_keys must not corrupt relationship tables."""
+    graph = ExtractedGraph(
+        name="test",
+        edges=[
+            ExtractedEdge(
+                edge_id="sess1:AlphaToBeta:0",
+                relationship_name="AlphaToBeta",
+                from_node_id="sess1:Alpha:unknown",
+                to_node_id="sess1:Beta:beta_id=b1",
+                properties=[ExtractedProperty(name="weight", value=0.5)],
+            ),
+        ],
+    )
+    mock_client = _mock_bq_client()
+    mat = OntologyMaterializer(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        bq_client=mock_client,
+    )
+    result = mat.materialize(graph, session_ids=["sess1"])
+    assert result == {}
+    mock_client.query.assert_not_called()
+    mock_client.insert_rows_json.assert_not_called()
+
+  def test_delete_scoped_to_replacement_session_ids(self):
+    """Only sessions with valid replacement rows should be deleted."""
+    graph = ExtractedGraph(
+        name="test",
+        nodes=[
+            ExtractedNode(
+                node_id="sess-A:Alpha:alpha_id=a1",
+                entity_name="Alpha",
+                labels=["Alpha"],
+                properties=[ExtractedProperty(name="alpha_id", value="a1")],
+            ),
+        ],
+    )
+    mock_client = _mock_bq_client()
+    mock_job = MagicMock()
+    mock_job.result.return_value = None
+    mock_client.query.return_value = mock_job
+    mock_client.insert_rows_json.return_value = []
+
+    mat = OntologyMaterializer(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        bq_client=mock_client,
+    )
+    mat.materialize(graph, session_ids=["sess-A", "sess-B"])
+
+    delete_sql = mock_client.query.call_args_list[0][0][0]
+    job_config = mock_client.query.call_args_list[0][1]["job_config"]
+    session_param = job_config.query_parameters[0].values
+    assert session_param == ["sess-A"]
+    assert "sess-B" not in delete_sql
+
+
+class TestRowValidation:
+
+  def test_node_row_is_valid_requires_primary_keys(self):
+    entity = _simple_spec().entities[0]
+    assert _node_row_is_valid({"alpha_id": "a1"}, entity)
+    assert not _node_row_is_valid({"alpha_id": ""}, entity)
+    assert not _node_row_is_valid({"score": 1.0}, entity)
+
+  def test_edge_row_is_valid_requires_foreign_keys(self):
+    spec = _simple_spec()
+    rel = spec.relationships[0]
+    row = _route_edge(
+        ExtractedEdge(
+            edge_id="sess1:AlphaToBeta:0",
+            relationship_name="AlphaToBeta",
+            from_node_id="sess1:Alpha:unknown",
+            to_node_id="sess1:Beta:beta_id=b1",
+            properties=[],
+        ),
+        rel,
+        spec,
+        "sess1",
+    )
+    assert not _edge_row_is_valid(row, rel, spec)
