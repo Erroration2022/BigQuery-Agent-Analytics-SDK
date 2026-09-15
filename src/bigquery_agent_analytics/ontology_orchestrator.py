@@ -209,6 +209,7 @@ def build_ontology_graph(
     endpoint: str = "gemini-2.5-flash",
     use_ai_generate: bool = True,
     location: Optional[str] = None,
+    connection_id: Optional[str] = None,
 ) -> dict[str, Any]:
   """Run the full ontology graph pipeline end-to-end.
 
@@ -229,6 +230,7 @@ def build_ontology_graph(
       endpoint: AI.GENERATE model endpoint.
       use_ai_generate: If True, uses server-side AI extraction.
       location: BigQuery location.
+      connection_id: Optional BigQuery connection for AI.GENERATE.
 
   Returns:
       A dict with keys: ``spec``, ``graph``, ``tables_created``,
@@ -257,6 +259,7 @@ def build_ontology_graph(
       table_id=table_id,
       endpoint=endpoint,
       location=location,
+      connection_id=connection_id,
   )
   graph = extractor.extract_graph(
       session_ids=session_ids,
