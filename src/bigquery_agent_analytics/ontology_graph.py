@@ -106,7 +106,7 @@ SELECT
           '\\n',
           st.transcript
         ),
-        endpoint => '{endpoint}',
+        endpoint => '{endpoint}',{connection_clause}
         output_schema => 'graph_json STRING'
       ).graph_json,
       r'^```(?:json)?\\s*', ''),
@@ -334,6 +334,7 @@ class OntologyGraphManager:
       table_id: Source telemetry table name.
       endpoint: AI.GENERATE model endpoint.
       location: BigQuery location.
+      connection_id: Optional BigQuery connection for AI.GENERATE.
       bq_client: Optional pre-configured BigQuery client.
   """
 
@@ -345,6 +346,7 @@ class OntologyGraphManager:
       table_id: str = "agent_events",
       endpoint: str = "gemini-2.5-flash",
       location: Optional[str] = None,
+      connection_id: Optional[str] = None,
       bq_client: Optional[bigquery.Client] = None,
   ) -> None:
     self.project_id = project_id
@@ -353,6 +355,7 @@ class OntologyGraphManager:
     self.table_id = table_id
     self.endpoint = endpoint
     self.location = location
+    self.connection_id = connection_id
     self._bq_client = bq_client
 
   @property
@@ -390,6 +393,13 @@ class OntologyGraphManager:
         f"models/{ep}"
     )
 
+  def _build_connection_clause(self) -> str:
+    """Return the AI.GENERATE connection_id clause, if configured."""
+    if not self.connection_id:
+      return ""
+    escaped = _escape_sql_literal(self.connection_id)
+    return f"\n        connection_id => '{escaped}',"
+
   def get_extraction_sql(
       self,
       session_ids: Optional[list[str]] = None,
@@ -409,6 +419,7 @@ class OntologyGraphManager:
     return _EXTRACT_ONTOLOGY_AI_QUERY.format(
         prompt=_escape_sql_literal(full_prompt),
         endpoint=self._resolve_endpoint(),
+        connection_clause=self._build_connection_clause(),
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,
@@ -442,6 +453,7 @@ class OntologyGraphManager:
     query = _EXTRACT_ONTOLOGY_AI_QUERY.format(
         prompt=_escape_sql_literal(full_prompt),
         endpoint=self._resolve_endpoint(),
+        connection_clause=self._build_connection_clause(),
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,

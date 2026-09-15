@@ -298,6 +298,18 @@ class TestGetExtractionSql:
     # AI.GENERATE runs on the aggregated transcript, not per-row.
     assert "st.transcript" in sql
 
+  def test_sql_includes_connection_id_when_set(self):
+    mgr = OntologyGraphManager(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        connection_id="projects/p/locations/us/connections/vertex",
+        bq_client=_mock_bq_client(),
+    )
+    sql = mgr.get_extraction_sql()
+    assert "connection_id =>" in sql
+    assert "projects/p/locations/us/connections/vertex" in sql
+
 
 # ------------------------------------------------------------------ #
 # _build_node_id                                                       #

@@ -780,6 +780,10 @@ def ontology_build(
     no_ai_generate: bool = typer.Option(
         False, help="Skip AI.GENERATE; fetch raw payloads instead."
     ),
+    location: Optional[str] = typer.Option(None, help="BQ location."),
+    connection_id: Optional[str] = typer.Option(
+        None, help="BQ connection ID for AI.GENERATE."
+    ),
     fmt: str = typer.Option(
         "json",
         "--format",
@@ -801,6 +805,8 @@ def ontology_build(
         table_id=table_id,
         endpoint=endpoint,
         use_ai_generate=not no_ai_generate,
+        location=location,
+        connection_id=connection_id,
     )
 
     output = {
