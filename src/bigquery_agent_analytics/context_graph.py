@@ -418,6 +418,11 @@ CREATE TABLE IF NOT EXISTS `{project}.{dataset}.{cross_links_table}` (
 )
 """
 
+_DELETE_BIZ_NODES_FOR_SESSIONS_QUERY = """\
+DELETE FROM `{project}.{dataset}.{biz_table}`
+WHERE session_id IN UNNEST(@session_ids)
+"""
+
 _DELETE_CROSS_LINKS_FOR_SESSIONS_QUERY = """\
 DELETE FROM `{project}.{dataset}.{cross_links_table}`
 WHERE session_id IN UNNEST(@session_ids)
@@ -1206,6 +1211,27 @@ class ContextGraphManager:
         }
         for n in nodes
     ]
+
+    session_ids = sorted({n.session_id for n in nodes})
+    delete_query = _DELETE_BIZ_NODES_FOR_SESSIONS_QUERY.format(
+        project=self.project_id,
+        dataset=self.dataset_id,
+        biz_table=self.config.biz_nodes_table,
+    )
+    delete_job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("session_ids", "STRING", session_ids),
+        ]
+    )
+
+    try:
+      job = self.client.query(delete_query, job_config=delete_job_config)
+      job.result()
+    except Exception as e:
+      err_msg = str(e).lower()
+      if "not found" not in err_msg and "does not exist" not in err_msg:
+        logger.warning("Failed to delete existing biz nodes: %s", e)
+        return False
 
     table_ref = (
         f"{self.project_id}.{self.dataset_id}" f".{self.config.biz_nodes_table}"

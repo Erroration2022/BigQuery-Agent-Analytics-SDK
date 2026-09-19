@@ -296,7 +296,39 @@ class TestContextGraphManager:
     ]
     result = mgr.store_biz_nodes(nodes)
     assert result is True
+    assert mock_client.query.call_count == 2
     mock_client.insert_rows_json.assert_called_once()
+
+  def test_store_biz_nodes_deletes_session_rows_before_insert(self):
+    mock_client = MagicMock()
+    mock_job = MagicMock()
+    mock_client.query.return_value = mock_job
+    mock_client.insert_rows_json.return_value = []
+    mgr = self._make_manager(mock_client)
+
+    nodes = [
+        BizNode(
+            span_id="s1",
+            session_id="sess-1",
+            node_type="Product",
+            node_value="Homepage",
+        ),
+        BizNode(
+            span_id="s2",
+            session_id="sess-2",
+            node_type="Budget",
+            node_value="5000",
+        ),
+    ]
+    result = mgr.store_biz_nodes(nodes)
+    assert result is True
+
+    delete_call = mock_client.query.call_args_list[1]
+    delete_query = delete_call[0][0]
+    delete_job_config = delete_call[1]["job_config"]
+    assert "DELETE FROM" in delete_query
+    session_param = delete_job_config.query_parameters[0]
+    assert set(session_param.values) == {"sess-1", "sess-2"}
 
   def test_store_biz_nodes_insert_error(self):
     mock_client = MagicMock()
