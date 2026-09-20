@@ -483,8 +483,9 @@ def parse_classify_row(
 ) -> tuple[CategoricalSessionResult, int]:
   """Parses a BigQuery AI.CLASSIFY result row.
 
-  AI.CLASSIFY returns the exact category label or NULL.
-  No JSON parsing or category validation needed.
+  AI.CLASSIFY returns the exact category label or NULL.  Non-NULL
+  values are validated against the configured category whitelist using
+  the same case-insensitive matching rules as ``parse_classifications``.
 
   Args:
       session_id: The session ID.
@@ -496,6 +497,7 @@ def parse_classify_row(
       null_count is the number of NULL classify results
       (execution failures, NOT parse errors).
   """
+  lookup = _build_category_lookup(config)
   metrics = []
   null_count = 0
 
@@ -503,17 +505,7 @@ def parse_classify_row(
     col_name = f"classify_{i}"
     value = row.get(col_name)
 
-    if value is not None:
-      metrics.append(
-          CategoricalMetricResult(
-              metric_name=metric.name,
-              category=value,
-              passed_validation=True,
-              parse_error=False,
-              raw_response=value,
-          )
-      )
-    else:
+    if value is None:
       null_count += 1
       metrics.append(
           CategoricalMetricResult(
@@ -522,6 +514,31 @@ def parse_classify_row(
               passed_validation=False,
               parse_error=False,
               raw_response=None,
+          )
+      )
+      continue
+
+    raw_category = str(value).lower().strip()
+    canonical = lookup.get(metric.name, {}).get(raw_category)
+
+    if canonical is not None:
+      metrics.append(
+          CategoricalMetricResult(
+              metric_name=metric.name,
+              category=canonical,
+              passed_validation=True,
+              parse_error=False,
+              raw_response=value,
+          )
+      )
+    else:
+      metrics.append(
+          CategoricalMetricResult(
+              metric_name=metric.name,
+              category=value if value != "" else None,
+              passed_validation=False,
+              parse_error=True,
+              raw_response=value,
           )
       )
 
