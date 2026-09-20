@@ -1195,7 +1195,7 @@ class TestParseClassifyRow:
     assert sr.metrics[1].parse_error is False
     assert null_count == 1
 
-  def test_empty_string_treated_as_value(self):
+  def test_empty_string_rejected_as_parse_error(self):
     config = _make_config(include_justification=False)
     row = {
         "session_id": "s1",
@@ -1204,9 +1204,39 @@ class TestParseClassifyRow:
         "classify_1": "safe",
     }
     sr, null_count = parse_classify_row("s1", row, config)
-    # Empty string is not None — it's a value from AI.CLASSIFY.
-    assert sr.metrics[0].category == ""
+    assert sr.metrics[0].category is None
+    assert sr.metrics[0].passed_validation is False
+    assert sr.metrics[0].parse_error is True
+    assert sr.metrics[1].passed_validation is True
+    assert null_count == 0
+
+  def test_unknown_category_rejected_as_parse_error(self):
+    config = _make_config(include_justification=False)
+    row = {
+        "session_id": "s1",
+        "transcript": "text",
+        "classify_0": "unknown",
+        "classify_1": "safe",
+    }
+    sr, null_count = parse_classify_row("s1", row, config)
+    assert sr.metrics[0].category == "unknown"
+    assert sr.metrics[0].passed_validation is False
+    assert sr.metrics[0].parse_error is True
+    assert null_count == 0
+
+  def test_case_insensitive_canonicalization(self):
+    config = _make_config(include_justification=False)
+    row = {
+        "session_id": "s1",
+        "transcript": "text",
+        "classify_0": "Positive",
+        "classify_1": "SAFE",
+    }
+    sr, null_count = parse_classify_row("s1", row, config)
+    assert sr.metrics[0].category == "positive"
     assert sr.metrics[0].passed_validation is True
+    assert sr.metrics[1].category == "safe"
+    assert sr.metrics[1].passed_validation is True
     assert null_count == 0
 
   def test_justification_always_none(self):
