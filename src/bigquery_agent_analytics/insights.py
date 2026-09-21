@@ -51,6 +51,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from .evaluators import _parse_json_from_text
+from .event_semantics import TOOL_ERROR_SQL_PREDICATE
 
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
@@ -373,12 +374,12 @@ class InsightsReport(BaseModel):
 # SQL Templates                                                        #
 # ------------------------------------------------------------------ #
 
-_SESSION_METADATA_QUERY = """\
+_SESSION_METADATA_QUERY = f"""\
 SELECT
   session_id,
   COUNT(*) AS event_count,
   COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
-  COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
+  COUNTIF({TOOL_ERROR_SQL_PREDICATE}) AS tool_errors,
   COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
   COUNTIF(
     event_type = 'USER_MESSAGE_RECEIVED'
@@ -408,8 +409,8 @@ SELECT
   COUNTIF(event_type = 'STATE_DELTA') AS state_changes,
   MIN(timestamp) AS start_time,
   MAX(timestamp) AS end_time
-FROM `{project}.{dataset}.{table}`
-WHERE {where}
+FROM `{{project}}.{{dataset}}.{{table}}`
+WHERE {{where}}
 GROUP BY session_id
 HAVING event_count >= @min_events
   AND turn_count >= @min_turns

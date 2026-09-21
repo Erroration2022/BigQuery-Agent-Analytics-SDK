@@ -70,6 +70,8 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 from pydantic import Field
 
+from .event_semantics import TOOL_ERROR_SQL_PREDICATE
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
@@ -803,23 +805,23 @@ class AnomalyDetector:
   WHERE total_events > 0
   """
 
-  _DETECT_BEHAVIOR_ANOMALIES_QUERY = """
+  _DETECT_BEHAVIOR_ANOMALIES_QUERY = f"""
   SELECT
     session_id,
     *
   FROM ML.DETECT_ANOMALIES(
-    MODEL `{project}.{dataset}.behavior_anomaly_model`,
+    MODEL `{{project}}.{{dataset}}.behavior_anomaly_model`,
     STRUCT(0.01 AS contamination),
     (
       SELECT
         session_id,
         COUNT(*) AS total_events,
         COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
-        COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
+        COUNTIF({TOOL_ERROR_SQL_PREDICATE}) AS tool_errors,
         COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
         AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
         TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), SECOND) AS session_duration
-      FROM `{project}.{dataset}.{table}`
+      FROM `{{project}}.{{dataset}}.{{table}}`
       WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @hours HOUR)
       GROUP BY session_id
       HAVING total_events > 0
@@ -1108,7 +1110,7 @@ class AnomalyDetector:
       session_id,
       COUNT(*) AS total_events,
       COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
-      COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
+      COUNTIF({TOOL_ERROR_SQL_PREDICATE}) AS tool_errors,
       COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
       AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency,
       TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), SECOND) AS session_duration

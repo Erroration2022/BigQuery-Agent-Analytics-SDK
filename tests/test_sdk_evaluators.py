@@ -502,6 +502,15 @@ class TestTTFTPrebuilt:
     assert evaluator.name == "ttft_evaluator"
 
 
+class TestSessionSummaryQueryToolErrors:
+  """Tests for canonical tool error counting in SESSION_SUMMARY_QUERY."""
+
+  def test_counts_tool_completed_status_error(self):
+    assert "TOOL_COMPLETED" in SESSION_SUMMARY_QUERY
+    assert "status = 'ERROR'" in SESSION_SUMMARY_QUERY
+    assert "event_type = 'TOOL_ERROR'" in SESSION_SUMMARY_QUERY
+
+
 class TestSessionSummaryQueryTTFT:
   """Tests for avg_ttft_ms and hitl_events in SESSION_SUMMARY_QUERY."""
 

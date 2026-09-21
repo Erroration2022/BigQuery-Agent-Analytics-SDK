@@ -45,6 +45,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from bigquery_agent_analytics import udf_kernels
+from bigquery_agent_analytics.event_semantics import TOOL_ERROR_SQL_PREDICATE
 
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
@@ -645,12 +646,12 @@ class LLMAsJudge:
 # SQL Templates for BigQuery-native evaluation                         #
 # ------------------------------------------------------------------ #
 
-SESSION_SUMMARY_QUERY = """\
+SESSION_SUMMARY_QUERY = f"""\
 SELECT
   session_id,
   COUNT(*) AS total_events,
   COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
-  COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
+  COUNTIF({TOOL_ERROR_SQL_PREDICATE}) AS tool_errors,
   COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
   AVG(
     CAST(
@@ -718,8 +719,8 @@ SELECT
       ) AS INT64), 0
     )
   )) AS total_tokens
-FROM `{project}.{dataset}.{table}`
-WHERE {where}
+FROM `{{project}}.{{dataset}}.{{table}}`
+WHERE {{where}}
 GROUP BY session_id
 LIMIT @trace_limit
 """

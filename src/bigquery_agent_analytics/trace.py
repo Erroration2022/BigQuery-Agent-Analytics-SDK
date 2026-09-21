@@ -39,6 +39,8 @@ import logging
 import re
 from typing import Any, Optional
 
+from bigquery_agent_analytics.event_semantics import extract_response_text
+
 logger = logging.getLogger("bigquery_agent_analytics." + __name__)
 
 
@@ -772,23 +774,15 @@ class Trace:
     """
     for span in reversed(self.spans):
       if span.event_type == "LLM_RESPONSE":
-        c = span.content
-        if isinstance(c, dict):
-          result = c.get("response")
-          if result:
-            return result
-        elif c:
-          return str(c)
+        result = extract_response_text(span.content)
+        if result:
+          return result
 
     for span in reversed(self.spans):
       if span.event_type == "AGENT_COMPLETED":
-        c = span.content
-        if isinstance(c, dict):
-          result = c.get("response") or c.get("text_summary")
-          if result:
-            return result
-        elif c:
-          return str(c)
+        result = extract_response_text(span.content)
+        if result:
+          return result
     return None
 
   @property
