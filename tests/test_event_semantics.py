@@ -46,6 +46,17 @@ class TestIsErrorEvent:
     )
 
 
+class TestToolErrorSqlPredicate:
+  """Tests for TOOL_ERROR_SQL_PREDICATE."""
+
+  def test_matches_tool_outcome_error_cases(self):
+    from bigquery_agent_analytics.event_semantics import TOOL_ERROR_SQL_PREDICATE
+
+    assert "event_type = 'TOOL_ERROR'" in TOOL_ERROR_SQL_PREDICATE
+    assert "TOOL_COMPLETED" in TOOL_ERROR_SQL_PREDICATE
+    assert "status = 'ERROR'" in TOOL_ERROR_SQL_PREDICATE
+
+
 class TestExtractResponseText:
   """Tests for extract_response_text()."""
 

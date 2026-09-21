@@ -363,6 +363,20 @@ class TestTrace:
     trace = Trace(trace_id="t", session_id="s", spans=spans)
     assert trace.final_response == "LLM said this"
 
+  def test_final_response_llm_response_text_summary(self):
+    """LLM_RESPONSE should fall back to text_summary like trace_evaluator."""
+    ts = datetime.now(timezone.utc)
+    spans = [
+        Span(
+            event_type="LLM_RESPONSE",
+            agent="agent",
+            timestamp=ts,
+            content={"text_summary": "Summary only"},
+        ),
+    ]
+    trace = Trace(trace_id="t", session_id="s", spans=spans)
+    assert trace.final_response == "Summary only"
+
   def test_final_response_null_agent_completed(self):
     """Handles null AGENT_COMPLETED content (ADK plugin behavior)."""
     ts = datetime.now(timezone.utc)

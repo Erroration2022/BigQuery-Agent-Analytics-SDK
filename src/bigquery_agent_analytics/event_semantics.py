@@ -56,6 +56,7 @@ __all__ = [
     "is_hitl_completed",
     "ERROR_SQL_PREDICATE",
     "NO_ERROR_SQL_PREDICATE",
+    "TOOL_ERROR_SQL_PREDICATE",
     "RESPONSE_EVENT_TYPES",
     "EVENT_FAMILIES",
     "ALL_KNOWN_EVENT_TYPES",
@@ -74,6 +75,12 @@ NO_ERROR_SQL_PREDICATE = (
     "NOT ENDS_WITH(event_type, '_ERROR')"
     " AND error_message IS NULL"
     " AND status != 'ERROR'"
+)
+
+# Matches :func:`udf_kernels.tool_outcome` for completed tool events.
+TOOL_ERROR_SQL_PREDICATE = (
+    "(event_type = 'TOOL_ERROR'"
+    " OR (event_type = 'TOOL_COMPLETED' AND status = 'ERROR'))"
 )
 
 
