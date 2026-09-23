@@ -106,6 +106,9 @@ class TestViewManager:
     assert "usage_prompt_tokens" in sql
     assert "usage_completion_tokens" in sql
     assert "usage_total_tokens" in sql
+    assert "usage_metadata.prompt_token_count" in sql
+    assert "usage_metadata.candidates_token_count" in sql
+    assert "usage_metadata.total_token_count" in sql
     assert "ttft_ms" in sql
     assert "model_version" in sql
     assert "usage_metadata" in sql

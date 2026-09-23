@@ -87,9 +87,20 @@ _EVENT_VIEW_DEFS: dict[str, tuple[str, str]] = {
         "llm_responses",
         """\
   JSON_QUERY(content, '$.response') AS response,
-  CAST(JSON_VALUE(content, '$.usage.prompt') AS INT64) AS usage_prompt_tokens,
-  CAST(JSON_VALUE(content, '$.usage.completion') AS INT64) AS usage_completion_tokens,
-  CAST(JSON_VALUE(content, '$.usage.total') AS INT64) AS usage_total_tokens,
+  CAST(COALESCE(
+    JSON_VALUE(attributes, '$.usage_metadata.prompt_token_count'),
+    JSON_VALUE(content, '$.usage.prompt'),
+    JSON_VALUE(attributes, '$.input_tokens')
+  ) AS INT64) AS usage_prompt_tokens,
+  CAST(COALESCE(
+    JSON_VALUE(attributes, '$.usage_metadata.candidates_token_count'),
+    JSON_VALUE(content, '$.usage.completion'),
+    JSON_VALUE(attributes, '$.output_tokens')
+  ) AS INT64) AS usage_completion_tokens,
+  CAST(COALESCE(
+    JSON_VALUE(attributes, '$.usage_metadata.total_token_count'),
+    JSON_VALUE(content, '$.usage.total')
+  ) AS INT64) AS usage_total_tokens,
   CAST(JSON_VALUE(latency_ms, '$.total_ms') AS INT64) AS total_ms,
   CAST(JSON_VALUE(
     latency_ms, '$.time_to_first_token_ms'
