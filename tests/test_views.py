@@ -115,12 +115,21 @@ class TestViewManager:
     sql = vm.get_view_sql("TOOL_STARTING")
     assert "event_type" in sql
 
-  def test_get_view_sql_empty_extra_columns(self, vm):
-    """Views with no extra columns produce valid SQL."""
+  def test_get_view_sql_user_message_columns(self, vm):
+    """User message view exposes normalized text from content JSON."""
     sql = vm.get_view_sql("USER_MESSAGE_RECEIVED")
     assert "CREATE OR REPLACE VIEW" in sql
     assert "event_type = 'USER_MESSAGE_RECEIVED'" in sql
-    # Should NOT have a trailing comma before FROM
+    assert "message_text" in sql
+    assert "message_content" in sql
+    assert "JSON_VALUE(content, '$.text_summary')" in sql
+    assert "JSON_VALUE(content, '$.response')" in sql
+
+  def test_get_view_sql_invocation_empty_extra_columns(self, vm):
+    """Views with no extra columns produce valid SQL."""
+    sql = vm.get_view_sql("INVOCATION_STARTING")
+    assert "CREATE OR REPLACE VIEW" in sql
+    assert "event_type = 'INVOCATION_STARTING'" in sql
     lines = sql.split("\n")
     from_idx = next(i for i, line in enumerate(lines) if "FROM" in line)
     pre_from = lines[from_idx - 1].strip()

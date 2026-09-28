@@ -73,7 +73,14 @@ _STANDARD_HEADERS = """\
 _EVENT_VIEW_DEFS: dict[str, tuple[str, str]] = {
     "USER_MESSAGE_RECEIVED": (
         "user_messages",
-        "",
+        """\
+  COALESCE(
+    JSON_VALUE(content, '$.response'),
+    JSON_VALUE(content, '$.text_summary'),
+    JSON_VALUE(content, '$.text'),
+    JSON_VALUE(content, '$.raw')
+  ) AS message_text,
+  JSON_QUERY(content, '$') AS message_content""",
     ),
     "LLM_REQUEST": (
         "llm_requests",
