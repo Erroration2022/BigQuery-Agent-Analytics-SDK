@@ -283,6 +283,19 @@ class TestGetExtractionSql:
     # so any internal single quotes must be escaped.
     assert "endpoint =>" in sql
 
+  def test_sql_escapes_endpoint_single_quotes(self):
+    malicious = "https://host/model'); SELECT 1; --"
+    mgr = OntologyGraphManager(
+        project_id="proj",
+        dataset_id="ds",
+        spec=_simple_spec(),
+        endpoint=malicious,
+        bq_client=_mock_bq_client(),
+    )
+    sql = mgr.get_extraction_sql()
+    assert "endpoint => 'https://host/model''); SELECT 1; --'" in sql
+    assert "endpoint => 'https://host/model'); SELECT 1; --'" not in sql
+
   def test_sql_aggregates_per_session(self):
     """SQL uses a CTE to aggregate events into per-session transcripts."""
     mgr = OntologyGraphManager(

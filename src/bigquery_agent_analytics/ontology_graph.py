@@ -71,6 +71,11 @@ def _escape_sql_literal(value: str) -> str:
   return value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
 
 
+def _escape_sql_endpoint(value: str) -> str:
+  """Escape an AI.GENERATE endpoint for a GoogleSQL string literal."""
+  return value.replace("'", "''")
+
+
 _EXTRACT_ONTOLOGY_AI_QUERY = """\
 WITH session_transcripts AS (
   SELECT
@@ -408,7 +413,7 @@ class OntologyGraphManager:
     full_prompt = prompt + "\n\nReturn a single JSON object:\n" + schema_hint
     return _EXTRACT_ONTOLOGY_AI_QUERY.format(
         prompt=_escape_sql_literal(full_prompt),
-        endpoint=self._resolve_endpoint(),
+        endpoint=_escape_sql_endpoint(self._resolve_endpoint()),
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,
@@ -441,7 +446,7 @@ class OntologyGraphManager:
 
     query = _EXTRACT_ONTOLOGY_AI_QUERY.format(
         prompt=_escape_sql_literal(full_prompt),
-        endpoint=self._resolve_endpoint(),
+        endpoint=_escape_sql_endpoint(self._resolve_endpoint()),
         project=self.project_id,
         dataset=self.dataset_id,
         table=self.table_id,
