@@ -125,3 +125,14 @@ class TestEventFamilies:
   def test_all_known_types_consistent(self):
     total = sum(len(v) for v in EVENT_FAMILIES.values())
     assert len(ALL_KNOWN_EVENT_TYPES) == total
+
+
+class TestContinuousQueryAlertingExample:
+  """Guards the continuous-query alerting example against error drift."""
+
+  def test_uses_canonical_error_predicate(self):
+    from pathlib import Path
+
+    sql = Path("examples/continuous_query_alerting.sql").read_text()
+    assert "ENDS_WITH(event_type, '_ERROR')" in sql
+    assert "event_type = 'TOOL_ERROR'" not in sql.split("WHERE", 1)[1]

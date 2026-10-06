@@ -65,6 +65,7 @@ SELECT
       -- Classify severity based on event type
       CASE
         WHEN event_type = 'TOOL_ERROR' THEN 'high'
+        WHEN event_type = 'LLM_ERROR' THEN 'high'
         WHEN status = 'ERROR' THEN 'critical'
         WHEN error_message IS NOT NULL THEN 'medium'
         ELSE 'low'
@@ -74,11 +75,10 @@ SELECT
 FROM
   APPENDS(TABLE `PROJECT.DATASET.agent_events`)
 WHERE
-  -- Match the SDK's error semantics:
-  -- TOOL_ERROR events, status='ERROR', or any row with error_message
-  event_type = 'TOOL_ERROR'
-  OR status = 'ERROR'
-  OR error_message IS NOT NULL;
+  -- Match the SDK canonical ERROR_SQL_PREDICATE (see event_semantics.py):
+  ENDS_WITH(event_type, '_ERROR')
+  OR error_message IS NOT NULL
+  OR status = 'ERROR';
 
 
 -- ------------------------------------------------------------------ --
