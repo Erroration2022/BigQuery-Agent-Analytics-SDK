@@ -493,6 +493,14 @@ class LLMAsJudge:
     Returns:
         SessionScore with LLM-judged scores.
     """
+    if not self._criteria:
+      return SessionScore(
+          session_id="",
+          scores={},
+          passed=False,
+          llm_feedback=None,
+      )
+
     scores: dict[str, float] = {}
     feedback_parts: list[str] = []
     passed = True
