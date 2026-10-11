@@ -267,6 +267,23 @@ class TestGraderPipeline:
     assert len(pipeline._graders) == 2
 
   @pytest.mark.asyncio
+  async def test_empty_llm_judge_criteria_fails_pipeline(self):
+    """Misconfigured LLMAsJudge (no criteria) must not vacuously pass."""
+    judge = LLMAsJudge(name="empty_judge")
+    pipeline = GraderPipeline(WeightedStrategy(threshold=0.5)).add_llm_grader(
+        judge
+    )
+
+    verdict = await pipeline.evaluate(
+        trace_text="User: hi",
+        final_response="hello",
+    )
+
+    assert verdict.passed is False
+    assert verdict.grader_results[0].passed is False
+    assert verdict.grader_results[0].scores == {}
+
+  @pytest.mark.asyncio
   async def test_grader_exception_handled(self):
     """Test that grader exceptions produce a failed result."""
 

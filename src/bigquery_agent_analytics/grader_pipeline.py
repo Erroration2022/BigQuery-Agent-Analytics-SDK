@@ -151,7 +151,8 @@ class WeightedStrategy(ScoringStrategy):
       if result.scores:
         avg_score = sum(result.scores.values()) / len(result.scores)
       else:
-        avg_score = 1.0 if result.passed else 0.0
+        # Empty scores must not inflate the composite (defaults are unsafe).
+        avg_score = 0.0
       weighted_sum += avg_score * weight
       total_weight += weight
 
