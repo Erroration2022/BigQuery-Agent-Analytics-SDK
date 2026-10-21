@@ -1088,11 +1088,7 @@ class Client:
       scores: dict[str, float] = {}
       if parsed and criterion.score_key in parsed:
         raw = float(parsed[criterion.score_key])
-        scores[criterion.name] = raw / 10.0
-      elif parsed:
-        for k, v in parsed.items():
-          if isinstance(v, (int, float)):
-            scores[k] = float(v) / 10.0
+        scores[criterion.name] = max(0.0, min(1.0, raw / 10.0))
 
       passed = bool(scores) and all(
           s >= criterion.threshold for s in scores.values()
