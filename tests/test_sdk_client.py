@@ -648,6 +648,46 @@ class TestFalsePassFix:
     assert report.session_scores[0].passed is True
     assert report.session_scores[0].scores["correctness"] == 0.8
 
+  def test_bqml_judge_ignores_unrelated_numeric_fields(self):
+    """BQML judge must not pass when only unrelated JSON numbers are present."""
+    mock_bq = _mock_bq_client()
+    mock_rows = [
+        _make_mock_row(
+            {
+                "session_id": "s1",
+                "trace_text": "USER: hi",
+                "final_response": "hello",
+                "evaluation": '{"confidence": 9, "justification": "looks fine"}',
+            }
+        ),
+    ]
+    mock_job = MagicMock()
+    mock_job.result.return_value = mock_rows
+    mock_bq.query.return_value = mock_job
+
+    client = Client(
+        project_id="proj",
+        dataset_id="ds",
+        verify_schema=False,
+        bq_client=mock_bq,
+    )
+
+    from bigquery_agent_analytics.evaluators import LLMAsJudge
+
+    evaluator = LLMAsJudge.correctness(threshold=0.5)
+    criterion = evaluator._criteria[0]
+
+    report = client._bqml_judge(
+        evaluator,
+        criterion,
+        "agent_events",
+        "TRUE",
+        [],
+        "proj.ds.model",
+    )
+    assert report.session_scores[0].passed is False
+    assert report.session_scores[0].scores == {}
+
 
 class TestApiJudgeUsesTableParams:
   """Tests for API judge using correct table/filter (Fix #3)."""
