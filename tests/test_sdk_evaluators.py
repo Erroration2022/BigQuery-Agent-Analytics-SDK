@@ -341,6 +341,12 @@ class TestSessionSummaryQuery:
   def test_contains_total_tokens(self):
     assert "total_tokens" in SESSION_SUMMARY_QUERY
 
+  def test_deduplicates_streaming_llm_response_chunks(self):
+    """ADK logs one LLM_RESPONSE per streaming chunk; keep the final row."""
+    assert "deduped_llm" in SESSION_SUMMARY_QUERY
+    assert "ROW_NUMBER()" in SESSION_SUMMARY_QUERY
+    assert "event_type = 'LLM_RESPONSE'" in SESSION_SUMMARY_QUERY
+
 
 class TestTokenEfficiencyPrebuilt:
   """Tests for CodeEvaluator.token_efficiency() preset."""
