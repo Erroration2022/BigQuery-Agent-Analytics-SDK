@@ -646,81 +646,126 @@ class LLMAsJudge:
 # ------------------------------------------------------------------ #
 
 SESSION_SUMMARY_QUERY = """\
-SELECT
-  session_id,
-  COUNT(*) AS total_events,
-  COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
-  COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
-  COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
-  AVG(
-    CAST(
-      JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64
-    )
-  ) AS avg_latency_ms,
-  MAX(
-    CAST(
-      JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64
-    )
-  ) AS max_latency_ms,
-  TIMESTAMP_DIFF(
-    MAX(timestamp), MIN(timestamp), MILLISECOND
-  ) AS total_latency_ms,
-  COUNTIF(
-    event_type = 'USER_MESSAGE_RECEIVED'
-  ) AS turn_count,
-  AVG(
-    CAST(
-      JSON_VALUE(latency_ms, '$.time_to_first_token_ms') AS FLOAT64
-    )
-  ) AS avg_ttft_ms,
-  COUNTIF(event_type LIKE 'HITL_%') AS hitl_events,
-  COUNTIF(
-    ENDS_WITH(event_type, '_ERROR')
-    OR error_message IS NOT NULL
-    OR status = 'ERROR'
-  ) > 0 AS has_error,
-  SUM(COALESCE(
-    CAST(JSON_VALUE(
-      attributes, '$.usage_metadata.prompt_token_count'
-    ) AS INT64),
-    CAST(JSON_VALUE(
-      content, '$.usage.prompt'
-    ) AS INT64),
-    CAST(JSON_VALUE(
-      attributes, '$.input_tokens'
-    ) AS INT64)
-  )) AS input_tokens,
-  SUM(COALESCE(
-    CAST(JSON_VALUE(
-      attributes, '$.usage_metadata.candidates_token_count'
-    ) AS INT64),
-    CAST(JSON_VALUE(
-      content, '$.usage.completion'
-    ) AS INT64),
-    CAST(JSON_VALUE(
-      attributes, '$.output_tokens'
-    ) AS INT64)
-  )) AS output_tokens,
-  SUM(COALESCE(
-    CAST(JSON_VALUE(
-      attributes, '$.usage_metadata.total_token_count'
-    ) AS INT64),
-    CAST(JSON_VALUE(
-      content, '$.usage.total'
-    ) AS INT64),
-    COALESCE(
+WITH base_events AS (
+  SELECT *
+  FROM `{project}.{dataset}.{table}`
+  WHERE {where}
+),
+deduped_llm AS (
+  SELECT * EXCEPT(row_num)
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY session_id, invocation_id, COALESCE(span_id, '')
+        ORDER BY timestamp DESC
+      ) AS row_num
+    FROM base_events
+    WHERE event_type = 'LLM_RESPONSE'
+  )
+  WHERE row_num = 1
+),
+session_rollups AS (
+  SELECT
+    session_id,
+    COUNT(*) AS total_events,
+    COUNTIF(event_type = 'TOOL_STARTING') AS tool_calls,
+    COUNTIF(event_type = 'TOOL_ERROR') AS tool_errors,
+    COUNTIF(event_type = 'LLM_REQUEST') AS llm_calls,
+    TIMESTAMP_DIFF(
+      MAX(timestamp), MIN(timestamp), MILLISECOND
+    ) AS total_latency_ms,
+    COUNTIF(
+      event_type = 'USER_MESSAGE_RECEIVED'
+    ) AS turn_count,
+    COUNTIF(event_type LIKE 'HITL_%') AS hitl_events,
+    COUNTIF(
+      ENDS_WITH(event_type, '_ERROR')
+      OR error_message IS NOT NULL
+      OR status = 'ERROR'
+    ) > 0 AS has_error
+  FROM base_events
+  GROUP BY session_id
+),
+llm_metrics AS (
+  SELECT
+    session_id,
+    AVG(
+      CAST(
+        JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64
+      )
+    ) AS avg_latency_ms,
+    MAX(
+      CAST(
+        JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64
+      )
+    ) AS max_latency_ms,
+    AVG(
+      CAST(
+        JSON_VALUE(latency_ms, '$.time_to_first_token_ms') AS FLOAT64
+      )
+    ) AS avg_ttft_ms,
+    SUM(COALESCE(
+      CAST(JSON_VALUE(
+        attributes, '$.usage_metadata.prompt_token_count'
+      ) AS INT64),
+      CAST(JSON_VALUE(
+        content, '$.usage.prompt'
+      ) AS INT64),
       CAST(JSON_VALUE(
         attributes, '$.input_tokens'
-      ) AS INT64), 0
-    ) + COALESCE(
+      ) AS INT64)
+    )) AS input_tokens,
+    SUM(COALESCE(
+      CAST(JSON_VALUE(
+        attributes, '$.usage_metadata.candidates_token_count'
+      ) AS INT64),
+      CAST(JSON_VALUE(
+        content, '$.usage.completion'
+      ) AS INT64),
       CAST(JSON_VALUE(
         attributes, '$.output_tokens'
-      ) AS INT64), 0
-    )
-  )) AS total_tokens
-FROM `{project}.{dataset}.{table}`
-WHERE {where}
-GROUP BY session_id
+      ) AS INT64)
+    )) AS output_tokens,
+    SUM(COALESCE(
+      CAST(JSON_VALUE(
+        attributes, '$.usage_metadata.total_token_count'
+      ) AS INT64),
+      CAST(JSON_VALUE(
+        content, '$.usage.total'
+      ) AS INT64),
+      COALESCE(
+        CAST(JSON_VALUE(
+          attributes, '$.input_tokens'
+        ) AS INT64), 0
+      ) + COALESCE(
+        CAST(JSON_VALUE(
+          attributes, '$.output_tokens'
+        ) AS INT64), 0
+      )
+    )) AS total_tokens
+  FROM deduped_llm
+  GROUP BY session_id
+)
+SELECT
+  session_rollups.session_id,
+  session_rollups.total_events,
+  session_rollups.tool_calls,
+  session_rollups.tool_errors,
+  session_rollups.llm_calls,
+  llm_metrics.avg_latency_ms,
+  llm_metrics.max_latency_ms,
+  session_rollups.total_latency_ms,
+  session_rollups.turn_count,
+  llm_metrics.avg_ttft_ms,
+  session_rollups.hitl_events,
+  session_rollups.has_error,
+  llm_metrics.input_tokens,
+  llm_metrics.output_tokens,
+  llm_metrics.total_tokens
+FROM session_rollups
+LEFT JOIN llm_metrics
+  ON session_rollups.session_id = llm_metrics.session_id
 LIMIT @trace_limit
 """
 
