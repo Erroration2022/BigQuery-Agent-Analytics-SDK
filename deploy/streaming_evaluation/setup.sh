@@ -28,6 +28,7 @@ STATE_FILE="${STATE_FILE:-$SCRIPT_DIR/.streaming_evaluation_state.json}"
 SERVICE_NAME="${SERVICE_NAME:-bq-agent-streaming-eval}"
 SCHEDULER_JOB_NAME="${SCHEDULER_JOB_NAME:-bq-agent-streaming-eval-5m}"
 SCHEDULER_SA_NAME="${SCHEDULER_SA_NAME:-bq-agent-stream-eval-sa}"
+WORKER_SA_NAME="${WORKER_SA_NAME:-bq-agent-stream-eval-worker}"
 RESULT_TABLE="${RESULT_TABLE:-streaming_evaluation_results}"
 STATE_TABLE="${STATE_TABLE:-_streaming_eval_state}"
 RUNS_TABLE="${RUNS_TABLE:-_streaming_eval_runs}"
@@ -52,7 +53,7 @@ Defaults for optional "up" arguments:
 
 Environment overrides:
   PROJECT_ID, DATASET_ID, SOURCE_TABLE, RUN_REGION
-  SERVICE_NAME, SCHEDULER_JOB_NAME, SCHEDULER_SA_NAME
+  SERVICE_NAME, SCHEDULER_JOB_NAME, SCHEDULER_SA_NAME, WORKER_SA_NAME
   RESULT_TABLE, STATE_TABLE, RUNS_TABLE
   POLL_SCHEDULE, SCHEDULER_TIME_ZONE
   OVERLAP_MINUTES, INITIAL_LOOKBACK_MINUTES
@@ -185,9 +186,11 @@ SQL
 )"
 }
 
-ensure_scheduler_service_account() {
+ensure_service_account() {
+  local sa_name="$1"
+  local display_name="$2"
   local account_id
-  account_id="$(normalized_scheduler_service_account_name "$SCHEDULER_SA_NAME")"
+  account_id="$(normalized_scheduler_service_account_name "$sa_name")"
   local email="${account_id}@${PROJECT}.iam.gserviceaccount.com"
   if gcloud iam service-accounts describe "$email" \
     --project="$PROJECT" >/dev/null 2>&1; then
@@ -197,10 +200,31 @@ ensure_scheduler_service_account() {
 
   gcloud iam service-accounts create "$account_id" \
     --project="$PROJECT" \
-    --display-name="Streaming evaluation scheduler" \
+    --display-name="$display_name" \
     >/dev/null
   wait_for_service_account "$email"
   echo "${email}|true"
+}
+
+ensure_scheduler_service_account() {
+  ensure_service_account "$SCHEDULER_SA_NAME" "Streaming evaluation scheduler"
+}
+
+ensure_worker_service_account() {
+  ensure_service_account "$WORKER_SA_NAME" "Streaming evaluation Cloud Run worker"
+}
+
+ensure_worker_bigquery_access() {
+  local worker_sa_email="$1"
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:${worker_sa_email}" \
+    --role="roles/bigquery.jobUser" \
+    --quiet >/dev/null
+  bq add-iam-policy-binding \
+    --member="serviceAccount:${worker_sa_email}" \
+    --role=roles/bigquery.dataEditor \
+    "${PROJECT}:${DATASET}" \
+    >/dev/null
 }
 
 wait_for_service_account() {
@@ -237,6 +261,7 @@ ensure_scheduler_oidc_binding() {
 
 deploy_worker() {
   local bq_location="$1"
+  local worker_sa_email="$2"
   local staging
   staging="$(mktemp -d)"
   trap 'rm -rf "$staging"' RETURN
@@ -253,6 +278,7 @@ PROCFILE
     --project="$PROJECT" \
     --region="$RUN_REGION" \
     --source="$staging" \
+    --service-account="$worker_sa_email" \
     --quiet \
     --no-allow-unauthenticated \
     --memory=512Mi \
@@ -328,6 +354,8 @@ write_state() {
   local bq_location="$1"
   local scheduler_sa_email="$2"
   local scheduler_sa_created="$3"
+  local worker_sa_email="$4"
+  local worker_sa_created="$5"
 
   cat > "$STATE_FILE" <<EOF
 {
@@ -340,6 +368,8 @@ write_state() {
   "scheduler_job_name": "${SCHEDULER_JOB_NAME}",
   "scheduler_service_account": "${scheduler_sa_email}",
   "scheduler_service_account_created": ${scheduler_sa_created},
+  "worker_service_account": "${worker_sa_email}",
+  "worker_service_account_created": ${worker_sa_created},
   "result_table": "${RESULT_TABLE}",
   "state_table": "${STATE_TABLE}",
   "runs_table": "${RUNS_TABLE}"
@@ -365,7 +395,13 @@ up() {
   create_state_table "$bq_location"
   create_runs_table "$bq_location"
 
-  deploy_worker "$bq_location"
+  local worker_sa_result
+  worker_sa_result="$(ensure_worker_service_account)"
+  local worker_sa_email="${worker_sa_result%%|*}"
+  local worker_sa_created="${worker_sa_result##*|}"
+  ensure_worker_bigquery_access "$worker_sa_email"
+
+  deploy_worker "$bq_location" "$worker_sa_email"
 
   local scheduler_sa_result
   scheduler_sa_result="$(ensure_scheduler_service_account)"
@@ -376,7 +412,12 @@ up() {
   local url
   url="$(service_url)"
   ensure_scheduler_job "$scheduler_sa_email" "$url"
-  write_state "$bq_location" "$scheduler_sa_email" "$scheduler_sa_created"
+  write_state \
+    "$bq_location" \
+    "$scheduler_sa_email" \
+    "$scheduler_sa_created" \
+    "$worker_sa_email" \
+    "$worker_sa_created"
 
   cat <<EOF
 Streaming evaluation scheduler deployed.
@@ -417,6 +458,8 @@ down() {
   local down_runs_table
   local scheduler_sa_email
   local scheduler_sa_created
+  local worker_sa_email
+  local worker_sa_created
 
   down_project="$(jq -r '.project' "$STATE_FILE")"
   down_dataset="$(jq -r '.dataset' "$STATE_FILE")"
@@ -428,6 +471,8 @@ down() {
   down_runs_table="$(jq -r '.runs_table' "$STATE_FILE")"
   scheduler_sa_email="$(jq -r '.scheduler_service_account' "$STATE_FILE")"
   scheduler_sa_created="$(jq -r '.scheduler_service_account_created' "$STATE_FILE")"
+  worker_sa_email="$(jq -r '.worker_service_account // empty' "$STATE_FILE")"
+  worker_sa_created="$(jq -r '.worker_service_account_created // false' "$STATE_FILE")"
 
   gcloud scheduler jobs delete "$down_job" \
     --project="$down_project" \
@@ -441,6 +486,12 @@ down() {
 
   if [[ "$scheduler_sa_created" == "true" ]]; then
     gcloud iam service-accounts delete "$scheduler_sa_email" \
+      --project="$down_project" \
+      --quiet >/dev/null 2>&1 || true
+  fi
+
+  if [[ "$worker_sa_created" == "true" && -n "$worker_sa_email" ]]; then
+    gcloud iam service-accounts delete "$worker_sa_email" \
       --project="$down_project" \
       --quiet >/dev/null 2>&1 || true
   fi
