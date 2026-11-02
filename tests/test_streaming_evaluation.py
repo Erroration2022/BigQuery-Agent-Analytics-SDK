@@ -836,6 +836,10 @@ class TestDeployAssets:
     assert "scheduler jobs create http" in setup_sh
     assert "cloudscheduler.googleapis.com" in setup_sh
     assert "roles/iam.serviceAccountOpenIdTokenCreator" in setup_sh
+    assert "roles/bigquery.jobUser" in setup_sh
+    assert "bq add-iam-policy-binding" in setup_sh
+    assert '--service-account="$worker_sa_email"' in setup_sh
+    assert "worker_service_account" in setup_sh
     assert "--timeout 300" in setup_sh
     assert "trap 'rm -rf \"$staging\"' RETURN" in setup_sh
     assert "Cloud Scheduler" in readme
@@ -847,7 +851,7 @@ class TestDeployAssets:
     assert "google-adk" not in requirements
     assert setup_sh.index(
         'ensure_scheduler_job "$scheduler_sa_email" "$url"'
-    ) < (setup_sh.index('write_state "$bq_location" "$scheduler_sa_email"'))
+    ) < setup_sh.index('write_state \\')
 
   def test_streaming_worker_import_does_not_require_google_adk(self):
     script = f"""

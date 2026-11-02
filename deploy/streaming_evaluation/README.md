@@ -44,6 +44,11 @@ flowchart LR
 - a BigQuery dataset containing `agent_events`
 - permission to deploy Cloud Run and Cloud Scheduler in the target project
 
+The setup script creates a dedicated Cloud Run service account and grants it
+`roles/bigquery.jobUser` on the project plus `roles/bigquery.dataEditor` on
+the target dataset so scheduled runs can scan `agent_events` and persist
+results without relying on the default Compute Engine service account.
+
 No special BigQuery reservation is required for this deployment path.
 The setup script can enable the required Cloud Run, Cloud Build,
 Artifact Registry, and Cloud Scheduler APIs automatically.
