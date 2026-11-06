@@ -462,6 +462,10 @@ def persist_result_row(
     row: dict[str, Any],
 ) -> bool:
   """Persist one result row idempotently via BigQuery MERGE."""
+  # Scalar STRING parameters reject Python None; real event rows can have NULL
+  # trace_id / span_id (e.g. coarse session-level AGENT_COMPLETED rows).
+  trace_id = row["trace_id"] if row.get("trace_id") is not None else ""
+  span_id = row["span_id"] if row.get("span_id") is not None else ""
   query = _RESULTS_MERGE_QUERY.format(
       project=config.result_project,
       dataset=config.result_dataset,
@@ -475,8 +479,8 @@ def persist_result_row(
           bigquery.ScalarQueryParameter(
               "session_id", "STRING", row["session_id"]
           ),
-          bigquery.ScalarQueryParameter("trace_id", "STRING", row["trace_id"]),
-          bigquery.ScalarQueryParameter("span_id", "STRING", row["span_id"]),
+          bigquery.ScalarQueryParameter("trace_id", "STRING", trace_id),
+          bigquery.ScalarQueryParameter("span_id", "STRING", span_id),
           bigquery.ScalarQueryParameter(
               "trigger_kind",
               "STRING",
