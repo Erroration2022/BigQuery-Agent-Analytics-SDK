@@ -381,6 +381,54 @@ class TestWorker:
     assert result_params["is_final"] is True
     assert result_params["evaluator_profile"] == STREAMING_EVALUATOR_PROFILE
 
+  def test_null_trace_and_span_ids_bind_empty_string_for_merge(
+      self,
+      streaming_worker,
+      monkeypatch,
+  ):
+    fake_bq = _FakeBigQueryClient(
+        trigger_rows=[
+            {
+                "session_id": "sess-1",
+                "trace_id": None,
+                "span_id": None,
+                "event_type": "AGENT_COMPLETED",
+                "status": "OK",
+                "error_message": None,
+                "trigger_timestamp": _NOW,
+                "trigger_kind": "session_terminal",
+            }
+        ]
+    )
+    client = MagicMock()
+    client.project_id = "proj"
+    client.dataset_id = "agent_trace"
+    client.table_id = "agent_events"
+    client.bq_client = fake_bq
+    client.evaluate.return_value = _report()
+    monkeypatch.setattr(
+        streaming_worker,
+        "build_client_from_context",
+        MagicMock(return_value=client),
+    )
+
+    response, status = streaming_worker.handle_scheduled_run({}, now=_NOW)
+
+    assert status == 200
+    assert response["processed_rows"] == 1
+
+    result_params = None
+    for query, job_config in zip(fake_bq.queries, fake_bq.job_configs):
+      if "streaming_evaluation_results" in query:
+        result_params = {
+            param.name: param.value for param in job_config.query_parameters
+        }
+        break
+
+    assert result_params is not None
+    assert result_params["trace_id"] == ""
+    assert result_params["span_id"] == ""
+
   def test_duplicate_trigger_returns_200(self, streaming_worker, monkeypatch):
     fake_bq = _FakeBigQueryClient(
         trigger_rows=[
