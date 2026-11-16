@@ -311,7 +311,7 @@ class TestBuildNodeId:
     entity_spec = spec.entities[0]  # Alpha, key=alpha_id
     raw_node = {"entity_name": "Alpha", "alpha_id": "a1", "score": 0.9}
     node_id = _build_node_id(raw_node, "Alpha", entity_spec, "sess1", 0)
-    assert node_id == "sess1:Alpha:alpha_id=a1"
+    assert node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
 
   def test_composite_keys_sorted(self):
     entity = _make_entity(
@@ -325,7 +325,7 @@ class TestBuildNodeId:
     )
     raw_node = {"entity_name": "Multi", "k2": 42, "k1": "abc", "val": 1.0}
     node_id = _build_node_id(raw_node, "Multi", entity, "sess1", 0)
-    assert node_id == "sess1:Multi:k1=abc,k2=42"
+    assert node_id == 'sess1:Multi:{"k1":"abc","k2":42}'
 
   def test_missing_key_falls_back_to_index(self):
     spec = _simple_spec()
@@ -391,7 +391,7 @@ class TestHydrateGraph:
     graph = _hydrate_graph(_simple_spec(), rows)
     assert len(graph.nodes) == 1
     node = graph.nodes[0]
-    assert node.node_id == "sess1:Alpha:alpha_id=a1"
+    assert node.node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
     assert node.entity_name == "Alpha"
     assert node.labels == ["Alpha"]
     assert len(node.properties) == 2  # alpha_id, score
@@ -458,8 +458,8 @@ class TestHydrateGraph:
     ]
     graph = _hydrate_graph(_simple_spec(), rows)
     assert len(graph.nodes) == 2
-    assert graph.nodes[0].node_id == "sess1:Alpha:alpha_id=a1"
-    assert graph.nodes[1].node_id == "sess2:Beta:beta_id=b1"
+    assert graph.nodes[0].node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
+    assert graph.nodes[1].node_id == 'sess2:Beta:{"beta_id":"b1"}'
 
   def test_multiple_nodes_in_single_row(self):
     rows = [
@@ -478,8 +478,8 @@ class TestHydrateGraph:
     ]
     graph = _hydrate_graph(_simple_spec(), rows)
     assert len(graph.nodes) == 2
-    assert graph.nodes[0].node_id == "sess1:Alpha:alpha_id=a1"
-    assert graph.nodes[1].node_id == "sess1:Alpha:alpha_id=a2"
+    assert graph.nodes[0].node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
+    assert graph.nodes[1].node_id == 'sess1:Alpha:{"alpha_id":"a2"}'
 
   def test_edge_hydration(self):
     rows = [
@@ -530,8 +530,8 @@ class TestHydrateGraph:
     ]
     graph = _hydrate_graph(_simple_spec(), rows)
     edge = graph.edges[0]
-    assert edge.from_node_id == "sess1:Alpha:alpha_id=a1"
-    assert edge.to_node_id == "sess1:Beta:beta_id=b1"
+    assert edge.from_node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
+    assert edge.to_node_id == 'sess1:Beta:{"beta_id":"b1"}'
 
   def test_edge_properties_extracted(self):
     rows = [
@@ -788,7 +788,7 @@ class TestHydrateGraph:
     ]
     graph = _hydrate_graph(_simple_spec(), rows)
     assert len(graph.nodes) == 1
-    assert graph.nodes[0].node_id == "sess1:Alpha:alpha_id=a1"
+    assert graph.nodes[0].node_id == 'sess1:Alpha:{"alpha_id":"a1"}'
     # Last occurrence wins.
     prop_map = {p.name: p.value for p in graph.nodes[0].properties}
     assert prop_map["score"] == 0.9
@@ -812,8 +812,8 @@ class TestHydrateGraph:
     graph = _hydrate_graph(_simple_spec(), rows)
     assert len(graph.nodes) == 2
     ids = {n.node_id for n in graph.nodes}
-    assert "sess1:Alpha:alpha_id=a1" in ids
-    assert "sess1:Alpha:alpha_id=a2" in ids
+    assert 'sess1:Alpha:{"alpha_id":"a1"}' in ids
+    assert 'sess1:Alpha:{"alpha_id":"a2"}' in ids
 
 
 # ------------------------------------------------------------------ #
@@ -829,7 +829,7 @@ class TestBuildEdgeNodeRef:
         "from_keys": {"alpha_id": "a1"},
     }
     ref = _build_edge_node_ref(raw_edge, "from", "sess1")
-    assert ref == "sess1:Alpha:alpha_id=a1"
+    assert ref == 'sess1:Alpha:{"alpha_id":"a1"}'
 
   def test_composite_keys_sorted(self):
     raw_edge = {
@@ -837,7 +837,7 @@ class TestBuildEdgeNodeRef:
         "from_keys": {"k2": 42, "k1": "abc"},
     }
     ref = _build_edge_node_ref(raw_edge, "from", "sess1")
-    assert ref == "sess1:Multi:k1=abc,k2=42"
+    assert ref == 'sess1:Multi:{"k1":"abc","k2":42}'
 
   def test_empty_keys_object(self):
     raw_edge = {
@@ -860,7 +860,7 @@ class TestBuildEdgeNodeRef:
         "to_keys": {"beta_id": "b1"},
     }
     ref = _build_edge_node_ref(raw_edge, "to", "sess1")
-    assert ref == "sess1:Beta:beta_id=b1"
+    assert ref == 'sess1:Beta:{"beta_id":"b1"}'
 
 
 # ------------------------------------------------------------------ #
