@@ -293,6 +293,13 @@ class TestParseKeySegment:
     result = _parse_key_segment("sess1:E:key=a=b")
     assert result == {"key": "a=b"}
 
+  def test_json_key_segment_with_comma_in_value(self):
+    from bigquery_agent_analytics.ontology_graph import _build_key_string
+
+    keys = {"rejection_id": "latency, cost"}
+    node_id = f"sess1:Rejection:{_build_key_string(keys)}"
+    assert _parse_key_segment(node_id) == {"rejection_id": "latency, cost"}
+
 
 # ------------------------------------------------------------------ #
 # _route_node                                                          #

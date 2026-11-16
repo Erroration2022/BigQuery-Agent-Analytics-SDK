@@ -48,6 +48,7 @@ Example usage::
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 from typing import Optional
 
@@ -217,14 +218,22 @@ def _route_node(
 def _parse_key_segment(node_id: str) -> dict[str, str]:
   """Parse the key segment from a node ID.
 
-  Node IDs look like ``{session_id}:{entity_name}:{k1=v1,k2=v2}``.
+  Node IDs look like ``{session_id}:{entity_name}:{key_segment}`` where
+  ``key_segment`` is compact JSON (preferred) or legacy ``k1=v1,k2=v2``.
   Returns a dict of key-value pairs from the last segment, or empty
   dict if the format is unexpected (e.g. index-based fallback IDs).
   """
-  parts = node_id.split(":")
+  parts = node_id.split(":", 2)
   if len(parts) < 3:
     return {}
-  key_segment = parts[-1]
+  key_segment = parts[2]
+  if key_segment.startswith("{") and key_segment.endswith("}"):
+    try:
+      parsed = json.loads(key_segment)
+    except json.JSONDecodeError:
+      parsed = None
+    if isinstance(parsed, dict):
+      return {str(k): str(v) for k, v in parsed.items()}
   if "=" not in key_segment:
     return {}
   result = {}

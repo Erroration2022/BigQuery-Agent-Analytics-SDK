@@ -258,9 +258,13 @@ def _hydrate_graph(
 
 
 def _build_key_string(keys_obj: dict) -> str:
-  """Build a sorted ``k1=v1,k2=v2`` string from a key-value dict."""
+  """Serialize primary-key columns into a stable node-id key segment.
+
+  Uses compact JSON so values may contain commas without corrupting
+  ``_parse_key_segment`` during edge materialization.
+  """
   if isinstance(keys_obj, dict) and keys_obj:
-    return ",".join(f"{k}={v}" for k, v in sorted(keys_obj.items()))
+    return json.dumps(keys_obj, sort_keys=True, separators=(",", ":"))
   return ""
 
 
