@@ -14,6 +14,8 @@
 
 """Tests for the eval_suite module."""
 
+import json
+
 import pytest
 
 from bigquery_agent_analytics.eval_suite import EvalCategory
@@ -310,6 +312,16 @@ class TestEvalSuiteSerialization:
     t2 = [t for t in tasks if t.task_id == "t2"][0]
     assert t2.category == EvalCategory.REGRESSION
     assert t2.expected_response == "hello"
+
+  def test_from_json_rejects_duplicate_task_ids(self):
+    suite = EvalSuite(name="my_suite")
+    suite.add_task(_make_task("t1", session_id="s1"))
+    payload = json.loads(suite.to_json())
+    payload["tasks"].append(
+        {**payload["tasks"][0], "session_id": "s_other", "description": "dup"}
+    )
+    with pytest.raises(ValueError, match="already exists"):
+      EvalSuite.from_json(json.dumps(payload))
 
 
 # ------------------------------------------------------------------ #
