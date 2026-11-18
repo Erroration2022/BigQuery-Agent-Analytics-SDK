@@ -107,8 +107,11 @@ def compile_node_table_clause(
   # extracted_at metadata.  BigQuery Property Graph only exposes
   # columns listed in PROPERTIES to GQL queries — KEY columns are
   # NOT automatically queryable, so we include everything here.
-  prop_names = [p.name for p in entity.properties]
-  prop_names.extend(["session_id", "extracted_at"])
+  prop_names = list(
+      dict.fromkeys(
+          [p.name for p in entity.properties] + ["session_id", "extracted_at"]
+      )
+  )
   props_str = ",\n        ".join(prop_names)
 
   return (

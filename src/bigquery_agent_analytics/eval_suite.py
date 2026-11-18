@@ -146,6 +146,8 @@ class EvalSuite:
     self._tasks: dict[str, EvalTaskDef] = {}
     if tasks:
       for task in tasks:
+        if task.task_id in self._tasks:
+          raise ValueError(f"Task '{task.task_id}' already exists in suite.")
         self._tasks[task.task_id] = task
 
   def add_task(self, task: EvalTaskDef) -> None:

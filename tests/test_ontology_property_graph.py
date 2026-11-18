@@ -169,6 +169,21 @@ class TestCompileNodeTableClause:
     clause = compile_node_table_clause(entity, "proj", "ds")
     assert "`other.ds.t` AS A" in clause
 
+  def test_session_id_property_not_duplicated_in_properties(self):
+    """session_id in entity.properties must not appear twice in PROPERTIES."""
+    entity = _make_entity(
+        "SessNode",
+        props=[
+            PropertySpec(name="node_id", type="string"),
+            PropertySpec(name="session_id", type="string"),
+        ],
+        keys=["node_id"],
+        source="p.d.sess_nodes",
+    )
+    clause = compile_node_table_clause(entity, "proj", "ds")
+    props_section = clause.split("PROPERTIES")[1]
+    assert props_section.count("session_id") == 1
+
 
 # ------------------------------------------------------------------ #
 # compile_edge_table_clause                                            #
