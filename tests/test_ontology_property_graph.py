@@ -195,6 +195,28 @@ class TestCompileEdgeTableClause:
     assert "weight" in clause
     assert "extracted_at" in clause
 
+  def test_extracted_at_property_not_duplicated_in_edge_properties(self):
+    """extracted_at in rel.properties must not appear twice in PROPERTIES."""
+    spec = _simple_spec()
+    rel = RelationshipSpec(
+        name="AlphaToBeta",
+        from_entity="Alpha",
+        to_entity="Beta",
+        binding=spec.relationships[0].binding,
+        properties=[
+            PropertySpec(name="weight", type="double"),
+            PropertySpec(name="extracted_at", type="timestamp"),
+        ],
+    )
+    spec = GraphSpec(
+        name=spec.name,
+        entities=spec.entities,
+        relationships=[rel],
+    )
+    clause = compile_edge_table_clause(rel, spec, "proj", "ds")
+    props_section = clause.split("PROPERTIES")[1]
+    assert props_section.count("extracted_at") == 1
+
   def test_edge_key_deduplicates_overlapping_columns(self):
     """If from_columns and to_columns share a column, edge KEY deduplicates."""
     a = _make_entity(
