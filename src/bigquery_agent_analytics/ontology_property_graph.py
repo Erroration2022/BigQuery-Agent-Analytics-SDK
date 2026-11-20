@@ -210,8 +210,12 @@ def compile_edge_table_clause(
   # Properties: relationship-specific properties + metadata.
   # Exclude columns already in the edge KEY (session_id is now in KEY).
   key_set = set(edge_key_cols)
-  prop_names = [p.name for p in rel.properties if p.name not in key_set]
-  prop_names.append("extracted_at")
+  prop_names = list(
+      dict.fromkeys(
+          [p.name for p in rel.properties if p.name not in key_set]
+          + ["extracted_at"]
+      )
+  )
   props_str = ",\n        ".join(prop_names)
 
   return (
