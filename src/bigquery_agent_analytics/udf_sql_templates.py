@@ -152,7 +152,7 @@ _SCORE_ERROR_RATE = _UdfSpec(
         """\
         def bqaa_score_error_rate(tool_calls, tool_errors, max_error_rate):
             if tool_calls <= 0:
-                return 1.0
+                return 0.0 if tool_errors > 0 else 1.0
             rate = tool_errors / tool_calls
             if rate >= max_error_rate:
                 return 0.0
@@ -303,7 +303,7 @@ _EVAL_SUMMARY_JSON = _UdfSpec(
 
         def _score_error_rate(calls, errors, max_rate):
             if calls <= 0:
-                return 1.0
+                return 0.0 if errors > 0 else 1.0
             rate = errors / calls
             if rate >= max_rate:
                 return 0.0
